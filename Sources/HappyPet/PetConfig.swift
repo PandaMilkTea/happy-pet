@@ -75,12 +75,14 @@ final class PetAssets {
     let eyesOpen: NSImage?
     let eyesClosed: NSImage?
     let armRight: NSImage?
+    /// 动作帧序列,键是动作名(walk / idle / happy …),值按序号排好
+    let frames: [String: [NSImage]]
     let photos: [NSImage]
     let birthdaySound: URL?
     let lovePhrases: [String]
 
     /// 是否有人物立绘。没有就用内置的橘猫。
-    var hasCharacter: Bool { body != nil }
+    var hasCharacter: Bool { body != nil || !frames.isEmpty }
 
     private init() {
         let root = PetAssets.assetsURL()
@@ -91,6 +93,7 @@ final class PetAssets {
         eyesOpen = PetAssets.loadImage("girl_eyes_open", in: root)
         eyesClosed = PetAssets.loadImage("girl_eyes_closed", in: root)
         armRight = PetAssets.loadImage("girl_arm_r", in: root)
+        frames = PetAssets.loadFrames(in: root)
         photos = PetAssets.loadPhotos(in: root)
         birthdaySound = PetAssets.loadSound(in: root)
         lovePhrases = PetAssets.loadPhrases(in: root)
@@ -123,6 +126,41 @@ final class PetAssets {
             if let image = NSImage(contentsOf: url) { return image }
         }
         return nil
+    }
+
+    /// 扫描 Assets 目录里的 `girl_<动作>_<序号>.png`,按动作分组、按序号排序。
+    /// 没有数字后缀的(girl_body / girl_body_blink / girl_eyes_open …)不会被收进来。
+    private static func loadFrames(in root: URL?) -> [String: [NSImage]] {
+        guard let root,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: root.path)
+        else { return [:] }
+
+        var buckets: [String: [(index: Int, file: String)]] = [:]
+        for name in names where ["png", "PNG"].contains((name as NSString).pathExtension) {
+            let stem = (name as NSString).deletingPathExtension
+            guard stem.hasPrefix("girl_") else { continue }
+            let parts = stem.dropFirst(5).split(separator: "_")
+            guard parts.count >= 2, let index = Int(parts[parts.count - 1]) else { continue }
+            let action = parts.dropLast().joined(separator: "_")
+            guard !action.isEmpty else { continue }
+            buckets[action, default: []].append((index, name))
+        }
+
+        var result: [String: [NSImage]] = [:]
+        for (action, list) in buckets {
+            let images = list
+                .sorted { $0.index < $1.index }
+                .compactMap { NSImage(contentsOf: root.appendingPathComponent($0.file)) }
+            if !images.isEmpty { result[action] = images }
+        }
+        if !result.isEmpty {
+            let summary = result
+                .map { "\($0.key)×\($0.value.count)" }
+                .sorted()
+                .joined(separator: " ")
+            print("🎬 帧动画素材: \(summary)")
+        }
+        return result
     }
 
     private static func loadPhotos(in root: URL?) -> [NSImage] {

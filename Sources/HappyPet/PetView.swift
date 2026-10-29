@@ -11,52 +11,33 @@ struct PetView: View {
     private let ink = Color(red: 0.24, green: 0.16, blue: 0.12)
     private let blush = Color(red: 1.00, green: 0.55, blue: 0.60)
 
-    // MARK: - 动画推导量
+    // MARK: - 动画推导量(全部来自 PetBrain 解算好的姿态)
     private var t: Double { brain.clock }
+    private var pose: PetPose { brain.pose }
     private var isWalking: Bool { brain.state == .walk }
     private var isSleeping: Bool { brain.state == .sleep }
     private var isHappy: Bool { brain.state == .happy }
     private var isDragging: Bool { brain.state == .drag }
     private var isFalling: Bool { brain.state == .fall }
-    private var eyesClosed: Bool { isSleeping || brain.isBlinking }
+    /// 眼睛张开度 < 0.45 就画闭眼(眨眼过程本身在大脑里做了缓动)
+    private var eyesClosed: Bool { pose.eyeOpen < 0.45 }
 
-    /// 呼吸(睡觉时更慢更深)
-    private var breath: CGFloat {
-        let speed = isSleeping ? 1.1 : 2.4
-        let amount: CGFloat = isSleeping ? 0.045 : 0.022
-        return CGFloat(sin(t * speed)) * amount
+    private var breath: CGFloat { pose.breath }
+    /// 帧动画在播时,起伏/挤压已经画在帧里了,程序化形变要收着来,否则双重抖
+    private var spriteDriven: Bool { brain.sprites.current != nil }
+    private var bob: CGFloat { pose.bob * (spriteDriven ? 0.3 : 1) }
+    private var jump: CGFloat { pose.jump }
+    private var squash: CGSize { pose.squash }
+    /// 立绘帧专用:把挤压往 1.0 收,只留一点落地冲击的味道
+    private var spriteSquash: CGSize {
+        guard spriteDriven else { return pose.squash }
+        let keep: CGFloat = 0.35
+        return CGSize(width: 1 + (pose.squash.width - 1) * keep,
+                      height: 1 + (pose.squash.height - 1) * keep)
     }
-
-    /// 走路上下颠簸
-    private var bob: CGFloat {
-        isWalking ? CGFloat(abs(sin(t * 7))) * -4 : 0
-    }
-
-    /// 开心跳跃
-    private var jump: CGFloat {
-        isHappy ? CGFloat(abs(sin(t * 7))) * -26 : 0
-    }
-
-    /// 身体挤压/拉伸
-    private var squash: CGSize {
-        if isFalling { return CGSize(width: 0.92, height: 1.10) }
-        if isHappy { return CGSize(width: 1.0 - breath, height: 1.04 + breath) }
-        return CGSize(width: 1 - breath, height: 1 + breath)
-    }
-
-    /// 被拖拽时左右晃动
-    private var tilt: Double {
-        isDragging ? sin(t * 5) * 7 : 0
-    }
-
-    private var tailSwing: CGFloat {
-        let speed = isSleeping ? 0.9 : (isWalking || isHappy ? 5.0 : 1.8)
-        return CGFloat(sin(t * speed))
-    }
-
-    private var legSwing: CGFloat {
-        isWalking ? CGFloat(sin(t * 7)) * 5 : (isDragging ? CGFloat(sin(t * 5)) * 3 : 0)
-    }
+    private var tilt: Double { pose.tilt }
+    private var tailSwing: CGFloat { pose.tailSwing }
+    private var legSwing: CGFloat { pose.legSwing }
 
     // MARK: - body
 
@@ -69,7 +50,7 @@ struct PetView: View {
                 groundShadow
                 avatar
                     .rotationEffect(.degrees(tilt), anchor: .bottom)
-                    .offset(y: 10 + bob + jump)
+                    .offset(x: pose.sway, y: 10 + bob + jump)
                 cakeLayer
                 effects
             }
@@ -87,9 +68,9 @@ struct PetView: View {
     private var groundShadow: some View {
         let baseWidth: CGFloat = hasCharacter ? 54 : 76
         return Ellipse()
-            .fill(Color.black.opacity(isDragging || isFalling ? 0.08 : 0.16))
-            .frame(width: baseWidth - (jump + bob) * 0.6, height: hasCharacter ? 10 : 13)
-            .offset(y: hasCharacter ? 70 : 62)
+            .fill(Color.black.opacity(pose.shadowOpacity))
+            .frame(width: baseWidth * pose.shadowScale, height: (hasCharacter ? 10 : 13) * pose.shadowScale)
+            .offset(x: pose.sway * 0.5, y: hasCharacter ? 70 : 62)
             .blur(radius: 2)
     }
 
@@ -103,12 +84,21 @@ struct PetView: View {
     }
 
     /// 图片素材驱动的人物。
-    /// 有「闭眼整帧」时眨眼走整图切换;只有眼睛小图层时才走叠加。
+    /// 优先播帧动画(Assets 里的 girl_<动作>_<序号>.png);
+    /// 没有帧素材时退回单张立绘:有「闭眼整帧」就整图切换,否则叠眼睛图层。
     private var characterBody: some View {
         let assets = brain.assets
+        let sprites = brain.sprites
         return ZStack(alignment: .bottom) {
-            if let blink = assets.blinkBody {
+            if let frame = sprites.current {
+                layer(frame)
+                // 当前帧 + 下一帧交叉淡化,相当于给 2~4 张帧补间,硬切就不闪了
+                if let upcoming = sprites.next, sprites.mix > 0.001 {
+                    layer(upcoming).opacity(sprites.mix)
+                }
+            } else if let blink = assets.blinkBody {
                 layer(eyesClosed ? blink : (assets.body ?? blink))
+                armLayer
             } else {
                 if let bodyImage = assets.body {
                     layer(bodyImage)
@@ -116,31 +106,51 @@ struct PetView: View {
                 if let open = assets.eyesOpen, let closed = assets.eyesClosed {
                     layer(eyesClosed ? closed : open)
                 }
-            }
-            if let arm = assets.armRight {
-                layer(arm)
-                    .rotationEffect(.degrees(armAngle), anchor: .top)
+                armLayer
             }
         }
         .frame(width: 74, height: 185, alignment: .bottom)
         .offset(y: -24)
-        .scaleEffect(x: squash.width, y: squash.height, anchor: .bottom)
-        .scaleEffect(x: brain.facingRight ? 1 : -1, y: 1)
+        .scaleEffect(x: spriteSquash.width, y: spriteSquash.height, anchor: .bottom)
+        .scaleEffect(x: pose.facing, y: 1, anchor: .center)
+    }
+
+    @ViewBuilder
+    private var armLayer: some View {
+        if let arm = brain.assets.armRight {
+            layer(arm)
+                .rotationEffect(.degrees(armAngle), anchor: .top)
+        }
+    }
+
+    /// 素材的统一像素尺度:抠图脚本保证所有帧和立绘用同一比例,
+    /// 只是画布大小会因为甩手/跳起而变宽变高。
+    /// 所以这里按「自身像素高 ÷ 立绘像素高 × 容器高」算显示尺寸,
+    /// 用 aspectRatio(.fit) 的话宽画布会被挤小,人物就一帧一个大小了。
+    private static let bodyHeight: CGFloat = 185
+    private static let bodyWidth: CGFloat = 74
+
+    private func pixelSize(_ image: NSImage) -> CGSize {
+        if let rep = image.representations.first, rep.pixelsHigh > 0 {
+            return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+        }
+        return image.size
     }
 
     private func layer(_ image: NSImage) -> some View {
-        Image(nsImage: image)
+        let unit = brain.assets.body.map { pixelSize($0).height } ?? pixelSize(image).height
+        let px = pixelSize(image)
+        let scale = unit > 1 ? Self.bodyHeight / unit : 0
+        let h = scale > 0 ? px.height * scale : Self.bodyHeight
+        let w = px.height > 1 ? h * px.width / px.height : Self.bodyWidth
+        return Image(nsImage: image)
             .resizable()
             .interpolation(.high)
-            .aspectRatio(contentMode: .fit)
+            .frame(width: w, height: h)
     }
 
-    /// 抬手角度:举牌或捧蛋糕时抬起来,睡着时垂下
-    private var armAngle: Double {
-        if brain.signText != nil || brain.isHoldingCake { return -58 }
-        if isSleeping { return 5 }
-        return sin(t * 1.6) * 3
-    }
+    /// 抬手角度:由大脑的弹簧解算,不再瞬间跳到目标值
+    private var armAngle: Double { pose.armAngle }
 
     // MARK: - 蛋糕 / 举牌 / 气泡
 
@@ -183,7 +193,7 @@ struct PetView: View {
             face
         }
         .scaleEffect(x: squash.width, y: squash.height, anchor: .bottom)
-        .scaleEffect(x: brain.facingRight ? 1 : -1, y: 1)
+        .scaleEffect(x: pose.facing, y: 1, anchor: .center)
     }
 
     private var torso: some View {
