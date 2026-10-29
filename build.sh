@@ -10,6 +10,11 @@ FIX="$ROOT/build/.toolchain-fix"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$FIX"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
+# 拷贝素材(人物立绘 / 照片 / 情话 / 配置),缺失也不影响构建
+if [[ -d "$ROOT/Resources/Assets" ]]; then
+  ditto "$ROOT/Resources/Assets" "$APP/Contents/Resources/Assets"
+fi
+
 EXTRA_FLAGS=()
 
 # ---------------------------------------------------------------------------
@@ -52,6 +57,7 @@ swiftc -O \
   ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
   -framework AppKit \
   -framework SwiftUI \
+  -framework AVFoundation \
   "$ROOT/Sources/HappyPet/"*.swift \
   -o "$APP/Contents/MacOS/HappyPet"
 

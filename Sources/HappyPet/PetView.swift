@@ -60,31 +60,122 @@ struct PetView: View {
 
     // MARK: - body
 
+    /// 宠物本体在窗口里的下移量:上方留给举牌和气泡
+    private let bodyDrop: CGFloat = 70
+
     var body: some View {
         ZStack {
-            groundShadow
-            petBody
-                .rotationEffect(.degrees(tilt), anchor: .bottom)
-                .offset(y: 10 + bob + jump)
-            effects
+            ZStack {
+                groundShadow
+                avatar
+                    .rotationEffect(.degrees(tilt), anchor: .bottom)
+                    .offset(y: 10 + bob + jump)
+                cakeLayer
+                effects
+            }
+            .frame(width: 160, height: 160)
+            .offset(y: bodyDrop)
+
+            overlayLayer
         }
-        .frame(width: 160, height: 160)
+        .frame(width: 200, height: 300)
         .allowsHitTesting(false)
     }
 
     // MARK: - 地面阴影
 
     private var groundShadow: some View {
-        Ellipse()
+        let baseWidth: CGFloat = hasCharacter ? 54 : 76
+        return Ellipse()
             .fill(Color.black.opacity(isDragging || isFalling ? 0.08 : 0.16))
-            .frame(width: 76 - (jump + bob) * 0.6, height: 13)
-            .offset(y: 62)
+            .frame(width: baseWidth - (jump + bob) * 0.6, height: hasCharacter ? 10 : 13)
+            .offset(y: hasCharacter ? 70 : 62)
             .blur(radius: 2)
     }
 
-    // MARK: - 身体
+    // MARK: - 本体:有立绘就用立绘,否则用内置橘猫
 
-    private var petBody: some View {
+    private var hasCharacter: Bool { brain.assets.hasCharacter }
+
+    @ViewBuilder
+    private var avatar: some View {
+        if hasCharacter { characterBody } else { catBody }
+    }
+
+    /// 图片素材驱动的人物。
+    /// 有「闭眼整帧」时眨眼走整图切换;只有眼睛小图层时才走叠加。
+    private var characterBody: some View {
+        let assets = brain.assets
+        return ZStack(alignment: .bottom) {
+            if let blink = assets.blinkBody {
+                layer(eyesClosed ? blink : (assets.body ?? blink))
+            } else {
+                if let bodyImage = assets.body {
+                    layer(bodyImage)
+                }
+                if let open = assets.eyesOpen, let closed = assets.eyesClosed {
+                    layer(eyesClosed ? closed : open)
+                }
+            }
+            if let arm = assets.armRight {
+                layer(arm)
+                    .rotationEffect(.degrees(armAngle), anchor: .top)
+            }
+        }
+        .frame(width: 74, height: 185, alignment: .bottom)
+        .offset(y: -24)
+        .scaleEffect(x: squash.width, y: squash.height, anchor: .bottom)
+        .scaleEffect(x: brain.facingRight ? 1 : -1, y: 1)
+    }
+
+    private func layer(_ image: NSImage) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+    }
+
+    /// 抬手角度:举牌或捧蛋糕时抬起来,睡着时垂下
+    private var armAngle: Double {
+        if brain.signText != nil || brain.isHoldingCake { return -58 }
+        if isSleeping { return 5 }
+        return sin(t * 1.6) * 3
+    }
+
+    // MARK: - 蛋糕 / 举牌 / 气泡
+
+    @ViewBuilder
+    private var cakeLayer: some View {
+        if brain.isHoldingCake {
+            CakeView(lit: brain.candleLit, clock: t)
+                .scaleEffect(0.92)
+                .offset(x: brain.facingRight ? 6 : -6,
+                        y: (hasCharacter ? -20 : 26) + bob + jump * 0.4)
+        }
+    }
+
+    @ViewBuilder
+    private var overlayLayer: some View {
+        // 立绘是全身比例,头顶比橘猫高不少,牌子和气泡要相应抬高
+        let hasSign = brain.signText != nil
+        let signY: CGFloat = hasCharacter ? -62 : -6
+        let bubbleY: CGFloat = hasCharacter
+            ? (hasSign ? -100 : -48)
+            : (hasSign ? -52 : -18)
+
+        if let sign = brain.signText {
+            SignView(text: sign, clock: t)
+               .offset(x: 12, y: signY)
+        }
+        if let bubble = brain.bubbleText {
+            BubbleView(text: bubble)
+                .offset(y: bubbleY)
+        }
+    }
+
+    // MARK: - 内置橘猫
+
+    private var catBody: some View {
         ZStack {
             tail
             legs
