@@ -51,15 +51,33 @@ EOF
   EXTRA_FLAGS+=(-vfsoverlay "$FIX/overlay.yaml" -Xcc -ivfsoverlay -Xcc "$FIX/overlay.yaml")
 fi
 
-echo "🔨 编译中 (${ARCH})..."
-swiftc -O \
-  -target "${ARCH}-apple-macosx13.0" \
-  ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
-  -framework AppKit \
-  -framework SwiftUI \
-  -framework AVFoundation \
-  "$ROOT/Sources/HappyPet/"*.swift \
-  -o "$APP/Contents/MacOS/HappyPet"
+BIN="$APP/Contents/MacOS/HappyPet"
+
+# 编译单个架构到指定输出路径
+compile_arch() {
+  local arch="$1" out="$2"
+  swiftc -O \
+    -target "${arch}-apple-macosx13.0" \
+    ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
+    -framework AppKit \
+    -framework SwiftUI \
+    -framework AVFoundation \
+    "$ROOT/Sources/HappyPet/"*.swift \
+    -o "$out"
+}
+
+# UNIVERSAL=1 时产出 arm64 + x86_64 双架构,送给 Intel Mac 也能打开。
+# 平时本地开发只编当前架构,快一半。
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+  echo "🔨 编译中 (universal: arm64 + x86_64)..."
+  compile_arch arm64 "$FIX/HappyPet-arm64"
+  compile_arch x86_64 "$FIX/HappyPet-x86_64"
+  lipo -create "$FIX/HappyPet-arm64" "$FIX/HappyPet-x86_64" -output "$BIN"
+  lipo -info "$BIN"
+else
+  echo "🔨 编译中 (${ARCH})..."
+  compile_arch "$ARCH" "$BIN"
+fi
 
 # 本地临时签名,避免首次运行被拦
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true
