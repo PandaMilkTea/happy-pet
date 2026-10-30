@@ -436,18 +436,19 @@ final class PetBrain: ObservableObject {
             return
         }
 
-        // 连戳累计
+        // 连戳累计。窗口放宽到 2.5 秒,慢慢戳也能攒上。
         if clock > pokeStreakDeadline { pokeStreak = 0 }
         pokeStreak += 1
-        pokeStreakDeadline = clock + 2.0
+        pokeStreakDeadline = clock + 2.5
+        isPurring = false
 
-        if pokeStreak >= 10 {
+        if pokeStreak >= 6 {
             pokeStreak = 0
             showBubble("好啦好啦,给你看个东西", duration: 3)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.onPhotoEasterEgg?()
             }
-        } else if pokeStreak == 6 {
+        } else if pokeStreak == 3 {
             showBubble("再戳就有惊喜了哦", duration: 2.5)
         } else if pokeStreak == 1, bubbleText == nil, Int.random(in: 0..<12) == 0,
                   let d = config.daysTogether {
@@ -516,8 +517,8 @@ final class PetBrain: ObservableObject {
             blowOutCandle()
             return
         }
-        // 摸头不算戳,顺手清掉连戳计数,免得误触照片彩蛋
-        pokeStreak = 0
+        // 摸头不清连戳计数:连点时第二下必然被识别成双击,
+        // 清了的话一路戳下去也凑不满,照片彩蛋就永远出不来。
         if state == .eat { return }   // 嘴里有东西就先让它吃完
         isPurring = true
         purrElapsed = 0

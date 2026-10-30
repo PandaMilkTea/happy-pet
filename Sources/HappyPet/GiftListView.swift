@@ -38,6 +38,8 @@ struct GiftListView: View {
         .opacity(appeared ? 1 : 0)
         .onAppear {
             used = Set(items.filter { GiftStore.shared.isUsed($0) }.map { $0.id })
+            // 之前就用掉的券,印章直接是落定状态,不要停在放大未落下的那一帧
+            stamping = current.map { used.contains($0.id) } ?? false
             withAnimation(.spring(response: 0.42, dampingFraction: 0.76)) { appeared = true }
         }
     }
@@ -271,7 +273,7 @@ struct GiftListView: View {
     private func step(_ delta: Int) {
         let next = index + delta
         guard items.indices.contains(next) else { return }
-        stamping = false
+        stamping = used.contains(items[next].id)
         withAnimation(.easeInOut(duration: 0.28)) { index = next }
     }
 

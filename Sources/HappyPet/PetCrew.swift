@@ -24,6 +24,8 @@ final class PetCrew {
     private(set) var leader: PetBrain
     /// 主角换人时通知外面重新接线(生日回调挂在 AppDelegate 上)
     var onLeaderChanged: ((PetBrain) -> Void)?
+    /// 任何一只上场时通知外面接线(每只都要能戳出照片彩蛋,不只是主角)
+    var onMemberJoined: ((PetBrain) -> Void)?
 
     private var assets: PetAssets { PetAssets.shared }
 
@@ -54,6 +56,7 @@ final class PetCrew {
         panel.orderFrontRegardless()
         members[leader.role] = Member(brain: leader, panel: panel)
         order = [leader.role]
+        onMemberJoined?(leader)
         leader.start()
 
         guard !companions.isEmpty else { return }
@@ -88,6 +91,7 @@ final class PetCrew {
         panel.orderFrontRegardless()
         members[role] = Member(brain: brain, panel: panel)
         order.append(role)
+        onMemberJoined?(brain)
         brain.start()
         persist()
         print("🐾 \(role.rawValue) 上场,现在场上: \(order.map { $0.rawValue }.joined(separator: " "))")
@@ -111,10 +115,16 @@ final class PetCrew {
 
         // 主角走了就把担子交给下一只(位置、回调、宿主窗一起跟过去)
         if member.brain === leader, let next = order.first, let heir = members[next] {
+            let wasHoldingCake = member.brain.isHoldingCake
             leader = heir.brain
-            heir.brain.promoteToLeader()
             PetPanel.setHost(heir.panel)
+            // 先接线再升职:promoteToLeader 里可能当场进入生日模式,回调得已经挂好
             onLeaderChanged?(heir.brain)
+            heir.brain.promoteToLeader()
+            // 上一只正捧着蛋糕(比如「再过一次生日」),别让蛋糕跟着它一起走掉
+            if wasHoldingCake, !heir.brain.isHoldingCake {
+                heir.brain.enterBirthdayMode()
+            }
             print("👑 主角交接: \(role.rawValue) → \(next.rawValue)")
         }
 

@@ -18,10 +18,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var brain: PetBrain { crew.leader }
     private var config: PetConfig { brain.config }
 
+    /// 右键点中的那只。状态栏菜单打开时清空,落回主角。
+    private weak var menuTarget: PetBrain?
+    /// 「戳一戳 / 摸摸头」这类动作的作用对象
+    private var actor: PetBrain { menuTarget ?? crew.leader }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // 不在 Dock 里显示
 
         crew.onLeaderChanged = { [weak self] _ in self?.wireUpCallbacks() }
+        crew.onMemberJoined = { [weak self] member in self?.wireShared(to: member) }
         wireUpCallbacks()
         crew.start()
         setupStatusItem()
@@ -47,18 +53,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - 大脑回调
 
+    /// 每只角色都该有的回调:谁被连戳十下,谁就掏出照片
+    private func wireShared(to member: PetBrain) {
+        member.onPhotoEasterEgg = { [weak self] in
+            guard let self else { return }
+            PhotoPanel.show(caption: "和\(self.config.nickname)的那些日子")
+        }
+    }
+
+    /// 只有主角负责的回调:生日、节日撒花
     private func wireUpCallbacks() {
+        wireShared(to: brain)
+
         brain.onCandleBlownOut = { [weak self] in
             guard let self else { return }
             self.breath.stop()
             self.breathActive = false
             self.throwConfetti(duration: 14)
             self.playBirthdaySong()
-        }
-
-        brain.onPhotoEasterEgg = { [weak self] in
-            guard let self else { return }
-            PhotoPanel.show(caption: "和\(self.config.nickname)的那些日子")
         }
 
         brain.onCelebration = { [weak self] occasion in
@@ -133,8 +145,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - 右键 / 状态栏菜单
 
-    func makeContextMenu() -> NSMenu {
+    /// - Parameter target: 右键点中的角色;nil 表示状态栏菜单,动作落在主角身上
+    func makeContextMenu(for target: PetBrain? = nil) -> NSMenu {
+        menuTarget = target
+        let isStatusMenu = target == nil
+        let who = target ?? crew.leader
         let menu = NSMenu()
+
+        if !isStatusMenu {
+            let head = NSMenuItem(title: config.displayName(for: who.role), action: nil, keyEquivalent: "")
+            head.isEnabled = false
+            menu.addItem(head)
+        }
 
         addItem(to: menu, title: "戳一戳", action: #selector(pokePet))
         addItem(to: menu, title: "喂点东西吃 🍗", action: #selector(openFoodTray))
@@ -142,15 +164,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let follow = NSMenuItem(title: "跟随鼠标", action: #selector(toggleFollow), keyEquivalent: "")
         follow.target = self
-        follow.state = brain.followMouse ? .on : .off
+        follow.state = who.followMouse ? .on : .off
         menu.addItem(follow)
-        followItem = follow
+        if isStatusMenu { followItem = follow }
 
         addItem(to: menu, title: "睡一会儿 / 醒来", action: #selector(toggleSleep))
 
         if brain.assets.availableRoles.count > 1 {
             menu.addItem(.separator())
-            menu.addItem(roleMenuItem())
+            menu.addItem(roleMenuItem(remember: isStatusMenu))
         }
 
         menu.addItem(.separator())
@@ -171,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   keyEquivalent: "")
             item.target = self
             menu.addItem(item)
-            daysItem = item
+            if isStatusMenu { daysItem = item }
         }
 
         menu.addItem(.separator())
@@ -188,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// 「谁来陪你」子菜单。勾上就上桌,取消就送走,场上至少留一只。
-    private func roleMenuItem() -> NSMenuItem {
+    private func roleMenuItem(remember: Bool) -> NSMenuItem {
         let parent = NSMenuItem(title: "谁来陪你 🐾", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         var items: [NSMenuItem] = []
@@ -203,11 +225,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             items.append(item)
         }
         parent.submenu = sub
-        roleItems = items
+        if remember { roleItems = items }
         return parent
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        // 只有状态栏菜单挂了 delegate,走到这里说明用的是状态栏入口 → 动作回到主角
+        menuTarget = nil
         followItem?.state = brain.followMouse ? .on : .off
         // 菜单只建一次,天数会跨天变,打开时现算
         daysItem?.title = daysTogetherTitle()
@@ -221,24 +245,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Actions
 
     @objc private func pokePet() {
-        brain.poke()
+        actor.poke()
     }
 
     @objc private func openFoodTray() {
-        FoodTrayPanel.show(brain: brain)
+        FoodTrayPanel.show(brain: actor)
     }
 
     @objc private func patHead() {
-        brain.headPat()
+        actor.headPat()
     }
 
     @objc private func toggleFollow() {
-        brain.followMouse.toggle()
+        let who = actor
+        who.followMouse.toggle()
         followItem?.state = brain.followMouse ? .on : .off
     }
 
     @objc private func toggleSleep() {
-        brain.toggleSleep()
+        actor.toggleSleep()
     }
 
     @objc private func pickRole(_ sender: NSMenuItem) {
@@ -250,7 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showLovePhrase() {
-        brain.showSign(duration: 8)
+        actor.showSign(duration: 8)
     }
 
     @objc private func showPhotos() {
@@ -271,19 +296,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showDaysTogether() {
+        let who = actor
         if let occasion = config.occasionToday, !occasion.isBirthday {
-            brain.showSign(occasion.sign, duration: 9)
+            who.showSign(occasion.sign, duration: 9)
             if let span = config.togetherSpanText {
-                brain.showBubble(span, duration: 6)
+                who.showBubble(span, duration: 6)
             }
         } else if let sign = config.togetherSignText {
-            brain.showSign(sign, duration: 9)
+            who.showSign(sign, duration: 9)
         }
     }
 
+    /// 生日流程(麦克风、歌、撒花)只认主角,别让嘉宾捧个点不着的蛋糕
     @objc private func replayBirthday() {
         stopBirthdaySong()
-        brain.enterBirthdayMode()
+        crew.leader.enterBirthdayMode()
     }
 
     @objc private func celebrate() {

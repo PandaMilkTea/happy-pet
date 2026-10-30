@@ -106,8 +106,9 @@ final class PetContainerView: NSView {
     override func mouseUp(with event: NSEvent) {
         if dragged {
             brain.endDrag()
-        } else if event.clickCount >= 2 {
-            // 双击 = 摸头
+        } else if event.clickCount == 2 {
+            // 只有「正好第二下」算摸头。第三下起继续算戳,
+            // 否则连点时 clickCount 一直 >= 2,连戳计数永远攒不起来,照片彩蛋就成了死彩蛋。
             brain.headPat()
         } else {
             brain.poke()
@@ -116,7 +117,7 @@ final class PetContainerView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        guard let menu = (NSApp.delegate as? AppDelegate)?.makeContextMenu() else { return }
+        guard let menu = (NSApp.delegate as? AppDelegate)?.makeContextMenu(for: brain) else { return }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
