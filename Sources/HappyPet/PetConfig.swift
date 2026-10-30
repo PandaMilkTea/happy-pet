@@ -16,6 +16,9 @@ struct PetConfig: Codable {
     var forceBirthdayMode: Bool?
     /// 首次启动时默认出场的角色(girl / boy / cat / dog),缺省 girl
     var defaultRole: String?
+    /// 各角色在菜单和气泡里的称呼,key 用角色名(girl / boy / cat / dog)。
+    /// 没配或配了空串的角色走内置默认值,girl 默认复用 nickname。
+    var roleNames: [String: String]?
 
     static let fallback = PetConfig(
         nickname: "宝宝",
@@ -24,10 +27,20 @@ struct PetConfig: Codable {
         anniversary: nil,
         birthdayWish: "生日快乐,今年也要一直开开心心的。",
         forceBirthdayMode: false,
-        defaultRole: nil
+        defaultRole: nil,
+        roleNames: nil
     )
 
     // MARK: 派生信息
+
+    /// 角色对外显示的名字。优先 config.roleNames,其次 girl 复用 nickname,最后用内置默认。
+    func displayName(for role: PetRole) -> String {
+        if let custom = roleNames?[role.rawValue]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !custom.isEmpty {
+            return custom
+        }
+        return role == .girl ? nickname : role.defaultName
+    }
 
     /// 今天是否生日(或被强制开启)
     var isBirthdayToday: Bool {
@@ -100,9 +113,10 @@ enum PetRole: String, CaseIterable {
         }
     }
 
-    func menuTitle(nickname: String) -> String {
+    /// 内置默认称呼。想改名不用动代码,在 Assets/config.json 的 roleNames 里配即可。
+    var defaultName: String {
         switch self {
-        case .girl: return nickname
+        case .girl: return "宝宝"
         case .boy:  return "我"
         case .cat:  return "猫"
         case .dog:  return "狗"

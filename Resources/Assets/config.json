@@ -1,8 +1,14 @@
 {
-  "nickname": "宝宝",
-  "birthdayMonth": 11,
-  "birthdayDay": 11,
-  "anniversary": "2023-05-20",
-  "birthdayWish": "生日快乐,今年也要一直开开心心的。",
-  "forceBirthdayMode": true
+  "nickname": "大明",
+  "birthdayMonth": 10,
+  "birthdayDay": 31,
+  "anniversary": "2021-04-05",
+  "birthdayWish": "大明生日快乐,永远开心～",
+  "forceBirthdayMode": false,
+  "roleNames": {
+    "girl": "大明",
+    "boy": "凯文",
+    "cat": "锅巴",
+    "dog": "大和"
+  }
 }

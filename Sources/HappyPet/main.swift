@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let sub = NSMenu()
         var items: [NSMenuItem] = []
         for role in brain.assets.availableRoles {
-            let item = NSMenuItem(title: role.menuTitle(nickname: config.nickname),
+            let item = NSMenuItem(title: config.displayName(for: role),
                                   action: #selector(pickRole(_:)),
                                   keyEquivalent: "")
             item.target = self

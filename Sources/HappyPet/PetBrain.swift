@@ -221,7 +221,7 @@ final class PetBrain: ObservableObject {
         bubbleRemaining = 0
         switchTo(.idle, duration: 2.5)
         sprites.play(PetState.idle.spriteAction, restart: true)
-        showBubble("\(next.menuTitle(nickname: config.nickname))来啦", duration: 3)
+        showBubble("\(config.displayName(for: next))来啦", duration: 3)
     }
 
     // MARK: - 生命周期
