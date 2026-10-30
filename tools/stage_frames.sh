@@ -40,4 +40,15 @@ for i in 1 2;     do copy "Resources/dog/sleep$i.png" "dog_sleep_$i.png"; done
 copy Resources/dog/poke1.png  dog_poke_1.png
 copy Resources/dog/drag1.png  dog_drag_1.png
 
+echo "== eat / purr (四个角色,按实际存在的序号自动收口)"
+for role in girl boy cat dog; do
+  for action in eat purr; do
+    for src in Resources/$role/$action[0-9].png; do
+      [ -f "$src" ] || continue          # glob 没命中时会原样留下模式串,这里兜掉
+      stem="${src##*/}"; stem="${stem%.png}"
+      copy "$src" "${role}_${action}_${stem#$action}.png"
+    done
+  done
+done
+
 echo "✅ 已归入 $DST"
