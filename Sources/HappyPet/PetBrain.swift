@@ -117,7 +117,7 @@ final class PetBrain: ObservableObject {
     // MARK: - 可调参数
     /// 窗口比宠物本体大一圈,上方留给举牌 / 气泡,下方留给蛋糕
     let windowSize = CGSize(width: 200, height: 300)
-    private let walkSpeed: Double = 55        // 像素/秒
+    private let walkSpeed: Double = 38        // 像素/秒(走路帧按实际位移推进,调慢这里步频也跟着慢,不会滑步)
     private let followSpeed: Double = 150
     private let gravity: Double = 1500
     private let tickInterval: Double = 1.0 / 60.0

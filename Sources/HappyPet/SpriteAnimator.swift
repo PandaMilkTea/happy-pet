@@ -45,7 +45,8 @@ final class SpriteAnimator {
         // 淡化窗口压到 0.05s —— 眨眼本来就是快动作,慢慢渐变反而像犯困。
         "idle": SpriteClip(frames: [], fps: 0.42, pixelsPerFrame: nil, loops: true,
                            crossfade: true, holds: [1.0, 0.07], fadeSeconds: 0.05),
-        "happy": SpriteClip(frames: [], fps: 7.5, pixelsPerFrame: nil, loops: true, crossfade: false),
+        // 开心:3~4 帧的蹦跳,fps 给高了像抽搐,4.5 左右刚好看清每个姿态
+        "happy": SpriteClip(frames: [], fps: 4.5, pixelsPerFrame: nil, loops: true, crossfade: false),
         // 睡觉:两帧呼吸起伏,淡化给足,胸口才是「缓慢起落」而不是一跳一跳
         "sleep": SpriteClip(frames: [], fps: 1.1, pixelsPerFrame: nil, loops: true,
                             crossfade: true, fadeSeconds: 0.45),
