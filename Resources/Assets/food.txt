@@ -1,0 +1,18 @@
+# 食物清单:一行一样,四列用 | 分隔
+# 格式: emoji|名称|爱吃的角色|不爱吃的角色
+# 角色用逗号分隔,可用 girl / boy / cat / dog;留空表示无所谓
+# 名称同时用来找图标:Assets/food/<名称>.png(128x128 透明背景,可选)
+# 删掉本文件会回退到内置的 12 样
+
+🍗|鸡腿|boy,dog|
+🐟|小鱼干|cat|
+🍔|汉堡|boy|cat
+🍟|薯条|boy,girl|dog
+🍕|披萨|boy,girl|
+🍰|小蛋糕|girl|dog
+🧋|奶茶|girl|cat,dog
+🍓|草莓|girl,cat|
+🍦|冰淇淋|girl|boy
+🦴|大骨头|dog|girl
+🍜|拉面|boy|cat
+🍣|寿司|cat,girl|

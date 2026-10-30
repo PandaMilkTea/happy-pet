@@ -11,6 +11,8 @@ enum PetState: Int, Equatable, CaseIterable {
     case fall      // 松手后下落
     case happy     // 被戳到后开心跳跃
     case cake      // 生日模式:捧着蛋糕站定
+    case eat       // 正在吃投喂的食物
+    case purr      // 被摸头后咕噜咕噜
 
     /// 对应的帧动画动作名
     var spriteAction: String {
@@ -22,6 +24,8 @@ enum PetState: Int, Equatable, CaseIterable {
         case .fall:  return "fall"
         case .happy: return "happy"
         case .cake:  return "cake"
+        case .eat:   return "eat"
+        case .purr:  return "purr"
         }
     }
 }
@@ -110,6 +114,15 @@ final class PetBrain: ObservableObject {
     /// 连续戳的次数(中间隔太久会清零)
     @Published private(set) var pokeStreak: Int = 0
 
+    // MARK: - 投喂 / 摸头
+
+    /// 正在吃的食物,nil = 没在吃。渲染层据此在嘴边画出来。
+    @Published private(set) var eatingFood: FoodItem?
+    /// 这一口吃到哪了 0~1,用来让食物一点点变小
+    private(set) var eatProgress: Double = 0
+    /// 正在咕噜咕噜(摸头)
+    @Published private(set) var isPurring: Bool = false
+
     /// 蜡烛被吹灭时回调(交给 AppDelegate 放撒花 + 音乐)
     var onCandleBlownOut: (() -> Void)?
     /// 连戳满 10 次的照片彩蛋回调
@@ -162,6 +175,14 @@ final class PetBrain: ObservableObject {
     private var hopPhase: Double = 0        // 0~1,一跳一个循环
     private var dragPhase: Double = 0
     private var tailPhase: Double = 0
+
+    // MARK: - 投喂 / 摸头计时
+    private var eatElapsed: Double = 0
+    private var eatBites: Int = 0
+    private let eatDuration: Double = 3.0
+    private var purrElapsed: Double = 0
+    private let purrDuration: Double = 3.4
+    private var chewPhase: Double = 0
 
     // MARK: - 眨眼
     private var blinkCountdown: Double = 3
@@ -382,8 +403,97 @@ final class PetBrain: ObservableObject {
         }
     }
 
-    // MARK: - 生日流程
+    // MARK: - 投喂 / 摸头
 
+    /// 屏幕坐标是否落在宠物身上。给投喂做命中判定,比点击命中区放宽一圈,拖过去更好对准。
+    func bodyContains(_ screenPoint: NSPoint) -> Bool {
+        guard let window else { return false }
+        let f = window.frame
+        let hasCharacter = roleAssets.hasAnything
+        let h = role.displayHeight
+        // 和 PetContainerView.hitTest 用同一套几何:脚底固定在窗口中线下方 138.5pt
+        let feet = f.midY - 138.5
+        let center = hasCharacter
+            ? CGPoint(x: f.midX, y: feet + h / 2)
+            : CGPoint(x: f.midX, y: f.midY - 70)
+        let rx = (hasCharacter ? (role.isHuman ? h * 0.23 : h * 0.6) : 58) + 30
+        let ry = (hasCharacter ? h * 0.48 : 54) + 30
+        let dx = (screenPoint.x - center.x) / rx
+        let dy = (screenPoint.y - center.y) / ry
+        return (dx * dx + dy * dy) <= 1
+    }
+
+    /// 投喂:拖一样食物到身上
+    func feed(_ item: FoodItem) {
+        guard !isGuest else { return }
+        if isHoldingCake {
+            showBubble("先把蜡烛吹了嘛 🎂", duration: 2.5)
+            return
+        }
+        pokeStreak = 0
+        isPurring = false
+        eatingFood = item
+        eatElapsed = 0
+        eatBites = 0
+        eatProgress = 0
+        fallVelocity = 0
+        velX = 0
+        impactElapsed = 0
+        switchTo(.eat, duration: eatDuration)
+        showBubble(item.greeting(for: role), duration: 2.4)
+    }
+
+    /// 双击摸头:咕噜咕噜 + 冒心心
+    func headPat() {
+        guard !isGuest else { return }
+        if isHoldingCake, candleLit {
+            blowOutCandle()
+            return
+        }
+        // 摸头不算戳,顺手清掉连戳计数,免得误触照片彩蛋
+        pokeStreak = 0
+        if state == .eat { return }   // 嘴里有东西就先让它吃完
+        isPurring = true
+        purrElapsed = 0
+        velX = 0
+        switchTo(.purr, duration: purrDuration)
+        showBubble(PetBrain.purrLines.randomElement() ?? "咕噜咕噜~", duration: 2.8)
+    }
+
+    private static let purrLines = [
+        "咕噜咕噜~",
+        "舒服…再摸摸",
+        "最喜欢被你摸头了",
+        "呼噜噜…要化了",
+        "摸头!开心!"
+    ]
+
+    private func updateEat(_ dt: Double) {
+        eatElapsed += dt
+        eatProgress = min(1, eatElapsed / eatDuration)
+        // 分三口吃完,每咬一口挤一下身体,看着才像真在咀嚼
+        let bite = min(3, Int(eatProgress * 3.0 + 0.0001))
+        if bite > eatBites {
+            eatBites = bite
+            impactElapsed = 0
+        }
+        guard eatElapsed >= eatDuration else { return }
+        let finished = eatingFood
+        eatingFood = nil
+        eatProgress = 0
+        hopPhase = 0
+        switchTo(.happy, duration: 2.2)
+        if let finished { showBubble(finished.afterword(for: role), duration: 3.2) }
+    }
+
+    private func updatePurr(_ dt: Double) {
+        purrElapsed += dt
+        guard purrElapsed >= purrDuration else { return }
+        isPurring = false
+        switchTo(.idle, duration: 2)
+    }
+
+    // MARK: - 生日流程
     func enterBirthdayMode() {
         isHoldingCake = true
         candleLit = true
@@ -497,6 +607,12 @@ final class PetBrain: ObservableObject {
             }
         case .cake:
             coast(dt)
+        case .eat:
+            coast(dt)
+            updateEat(dt)
+        case .purr:
+            coast(dt)
+            updatePurr(dt)
         }
 
         if stateElapsed >= stateDuration { decideNextState() }
@@ -704,6 +820,12 @@ final class PetBrain: ObservableObject {
             stateDuration = .infinity
             return
         }
+        // 正在吃东西 / 被摸头时不打断,交给各自的计时器收尾
+        if state == .eat || state == .purr {
+            stateElapsed = 0
+            stateDuration = 1
+            return
+        }
         // 捧着蛋糕时站定不动,等着被吹
         if isHoldingCake {
             if state != .happy { switchTo(.cake, duration: .infinity) }
@@ -773,6 +895,14 @@ final class PetBrain: ObservableObject {
         let tailSpeed = 1.8 + 3.2 * max(speedRatio, w(.happy)) - 0.9 * w(.sleep)
         tailPhase += dt * tailSpeed
         if tailPhase > .pi * 2 { tailPhase -= .pi * 2 }
+
+        // 咀嚼:只在吃东西时推进,吃完归零,免得下次开口对不上节奏
+        if w(.eat) > 0.02 {
+            chewPhase += dt * 11
+            if chewPhase > .pi * 2 { chewPhase -= .pi * 2 }
+        } else {
+            chewPhase = 0
+        }
     }
 
     /// 待机不再只有呼吸:隔一会儿来个张望 / 歪头 / 踮脚 / 伸懒腰
@@ -852,6 +982,8 @@ final class PetBrain: ObservableObject {
         let happyW = w(.happy)
         let dragW = w(.drag)
         let fallW = w(.fall)
+        let eatW = w(.eat)
+        let purrW = w(.purr)
         let env = gestureEnvelope
 
         var p = PetPose()
@@ -890,6 +1022,17 @@ final class PetBrain: ObservableObject {
         // 拖拽:身体随拖拽方向后倾 + 小幅摆动
         let dragLean = max(-16, min(16, -dragVelX * 0.035))
         tilt += (sin(dragPhase) * 7 + dragLean) * dragW
+
+        // 吃东西:小幅点头 + 身体跟着咀嚼节奏一上一下
+        let chew = sin(chewPhase)
+        p.bob += CGFloat(chew * 1.6 * eatW)
+        tilt += chew * 2.6 * eatW
+
+        // 被摸头:整只慢慢左右蹭,像在蹭手
+        let purrWave = sin(clock * 2.6)
+        p.sway += CGFloat(purrWave * 2.4 * purrW)
+        tilt += purrWave * 4 * purrW
+
         p.tilt = tilt
 
         // 形变合成
@@ -897,6 +1040,9 @@ final class PetBrain: ObservableObject {
         var sy = 1 + breath
         sx += 0.03 * footContact * walkW + 0.05 * hopLand * happyW
         sy -= 0.03 * footContact * walkW + 0.06 * hopLand * happyW
+        // 咀嚼时嘴部挤压,被摸头时整只微微缩成一团
+        sx += 0.035 * chew * eatW + 0.03 * purrW
+        sy -= 0.035 * chew * eatW + 0.02 * purrW
         // 下落拉长
         sx += (0.92 - 1) * fallW
         sy += (1.10 - 1) * fallW
@@ -911,6 +1057,8 @@ final class PetBrain: ObservableObject {
         let mag = max(0.1, abs(facingBlend))
         p.facing = CGFloat(facingBlend >= 0 ? mag : -mag)
         p.eyeOpen = min(blinkEyeOpen, 1 - sleepW)
+        // 享受摸头的时候眯着眼
+        p.eyeOpen = min(p.eyeOpen, 1 - 0.7 * purrW)
 
         let lift = Double(-(p.bob + p.jump))
         p.shadowScale = CGFloat(max(0.45, 1 - lift * 0.013))

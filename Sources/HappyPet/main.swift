@@ -128,6 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
 
         addItem(to: menu, title: "戳一戳", action: #selector(pokePet))
+        addItem(to: menu, title: "喂点东西吃 🍗", action: #selector(openFoodTray))
+        addItem(to: menu, title: "摸摸头", action: #selector(patHead))
 
         let follow = NSMenuItem(title: "跟随鼠标", action: #selector(toggleFollow), keyEquivalent: "")
         follow.target = self
@@ -210,6 +212,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func pokePet() {
         brain.poke()
+    }
+
+    @objc private func openFoodTray() {
+        FoodTrayPanel.show(brain: brain)
+    }
+
+    @objc private func patHead() {
+        brain.headPat()
     }
 
     @objc private func toggleFollow() {

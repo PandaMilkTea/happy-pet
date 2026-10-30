@@ -54,7 +54,12 @@ final class SpriteAnimator {
         "sign": SpriteClip(frames: [], fps: 3, pixelsPerFrame: nil, loops: true, crossfade: true),
         "drag": SpriteClip(frames: [], fps: 5, pixelsPerFrame: nil, loops: true, crossfade: true),
         "fall": SpriteClip(frames: [], fps: 8, pixelsPerFrame: nil, loops: false, crossfade: false),
-        "poke": SpriteClip(frames: [], fps: 8, pixelsPerFrame: nil, loops: false, crossfade: false)
+        "poke": SpriteClip(frames: [], fps: 8, pixelsPerFrame: nil, loops: false, crossfade: false),
+        // 吃东西:咀嚼要有嚼劲,帧切得快一点
+        "eat": SpriteClip(frames: [], fps: 5, pixelsPerFrame: nil, loops: true, crossfade: true),
+        // 被摸头:享受状态,慢慢蹭,淡化给足
+        "purr": SpriteClip(frames: [], fps: 2.5, pixelsPerFrame: nil, loops: true,
+                           crossfade: true, fadeSeconds: 0.3)
     ]
 
     /// 素材缺失时的降级顺序(不含自身)
@@ -67,6 +72,8 @@ final class SpriteAnimator {
         "drag": ["fall", "idle"],
         "fall": ["drag", "idle"],
         "sleep": ["idle"],
+        "eat": ["happy", "idle"],
+        "purr": ["sleep", "happy", "idle"],
         "idle": []
     ]
 

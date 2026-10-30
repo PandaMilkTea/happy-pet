@@ -109,6 +109,9 @@ final class PetContainerView: NSView {
     override func mouseUp(with event: NSEvent) {
         if dragged {
             brain.endDrag()
+        } else if event.clickCount >= 2 {
+            // 双击 = 摸头
+            brain.headPat()
         } else {
             brain.poke()
         }

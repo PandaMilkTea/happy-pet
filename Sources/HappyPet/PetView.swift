@@ -52,6 +52,7 @@ struct PetView: View {
                     .rotationEffect(.degrees(tilt), anchor: .bottom)
                     .offset(x: pose.sway, y: 10 + bob + jump)
                 cakeLayer
+                foodLayer
                 effects
             }
             .frame(width: 160, height: 160)
@@ -166,6 +167,23 @@ struct PetView: View {
                 .scaleEffect(hasCharacter && !brain.role.isHuman ? 0.7 : 0.92)
                 .offset(x: brain.facingRight ? 6 : -6,
                         y: cakeY + bob + jump * 0.4)
+        }
+    }
+
+    /// 嘴边的食物:一口一口变小,吃完消失
+    @ViewBuilder
+    private var foodLayer: some View {
+        if let food = brain.eatingFood {
+            // 三口吃完,所以尺寸按 1 / 2/3 / 1/3 台阶往下掉,看着像被咬掉
+            let step = min(2, Int(brain.eatProgress * 3))
+            let shrink = CGFloat(1 - Double(step) * 0.3)
+            let mouthY: CGFloat = hasCharacter ? (Self.feetLine - displayHeight * 0.78) : 4
+            let chew = CGFloat(sin(t * 11) * 1.6)
+            FoodIconView(item: food, size: 34 * shrink)
+                .rotationEffect(.degrees(brain.facingRight ? -12 : 12))
+                .offset(x: (brain.facingRight ? 18 : -18) + pose.sway,
+                        y: mouthY + bob + jump * 0.4 + chew)
+                .animation(.easeOut(duration: 0.18), value: step)
         }
     }
 
@@ -366,7 +384,24 @@ struct PetView: View {
 
     @ViewBuilder
     private var effects: some View {
-        if isSleeping {
+        if brain.isPurring {
+            // 摸头:心心更密更多,再配两个音符当「咕噜」声
+            ForEach(0..<5, id: \.self) { i in
+                let p = CGFloat((t * 1.1 + Double(i) * 0.2).truncatingRemainder(dividingBy: 1))
+                HeartShape()
+                    .fill(blush.opacity(Double(1 - p)))
+                    .frame(width: 15 - p * 5, height: 14 - p * 5)
+                    .offset(x: CGFloat(i - 2) * 17 + CGFloat(sin(Double(p) * 6 + Double(i)) * 5),
+                            y: -36 - p * 40)
+            }
+            ForEach(0..<2, id: \.self) { i in
+                let p = CGFloat((t * 0.7 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1))
+                Text("♪")
+                    .font(.system(size: 13 + p * 6, weight: .bold, design: .rounded))
+                    .foregroundColor(Color(red: 0.95, green: 0.55, blue: 0.68).opacity(Double(1 - p) * 0.9))
+                    .offset(x: (i == 0 ? 42 : -42) - p * 8, y: -30 - p * 32)
+            }
+        } else if isSleeping {
             ForEach(0..<3, id: \.self) { i in
                 let p = CGFloat((t * 0.45 + Double(i) * 0.33).truncatingRemainder(dividingBy: 1))
                 Text("z")

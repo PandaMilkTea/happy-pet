@@ -320,6 +320,8 @@ final class PetAssets {
     let photos: [NSImage]
     let birthdaySound: URL?
     let lovePhrases: [String]
+    /// Assets 目录本身,给需要按需扫子目录的模块用(食物图标等)
+    let assetsRoot: URL?
 
     /// 菜单里可选的角色,按 PetRole.allCases 的顺序
     var availableRoles: [PetRole] { PetRole.allCases.filter { roles[$0] != nil } }
@@ -339,6 +341,7 @@ final class PetAssets {
 
     private init() {
         let root = PetAssets.assetsURL()
+        assetsRoot = root
 
         config = PetAssets.loadConfig(in: root)
         roles = PetAssets.loadRoles(in: root)
