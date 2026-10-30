@@ -30,28 +30,14 @@ struct FoodItem: Identifiable {
         return .fine
     }
 
-    /// 刚接到食物时的反应
+    /// 刚接到食物时的反应。口吻按角色分(锅巴高冷、大和热情……)
     func greeting(for role: PetRole) -> String {
-        switch taste(for: role) {
-        case .loved:
-            return ["\(name)!我最爱这个了", "哇——是\(name)!", "这个这个!超喜欢\(name)"].randomElement()!
-        case .fine:
-            return ["谢谢你的\(name)~", "\(name)也不错哦", "开动啦~"].randomElement()!
-        case .hated:
-            return ["唔…\(name)我不太行", "\(name)…看在是你给的", "勉为其难吃一口"].randomElement()!
-        }
+        RoleVoice.foodGreeting(role: role, taste: taste(for: role), name: name)
     }
 
     /// 吃完的满足感
     func afterword(for role: PetRole) -> String {
-        switch taste(for: role) {
-        case .loved:
-            return ["太好吃了!还想要", "幸福得冒泡泡~", "你最懂我了"].randomElement()!
-        case .fine:
-            return ["吃饱啦,谢谢你", "嗯~满足", "心情变好了"].randomElement()!
-        case .hated:
-            return ["…其实还行吧", "吃完了!下次换个口味", "勉强及格啦"].randomElement()!
-        }
+        RoleVoice.foodAfterword(role: role, taste: taste(for: role), name: name)
     }
 }
 

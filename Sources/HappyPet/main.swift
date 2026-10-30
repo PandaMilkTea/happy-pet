@@ -3,8 +3,7 @@ import AVFoundation
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
-    private let brain = PetBrain()
-    private var panel: PetPanel?
+    private let crew = PetCrew.shared
     private var statusItem: NSStatusItem?
     private var followItem: NSMenuItem?
     private var roleItems: [NSMenuItem] = []
@@ -15,21 +14,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 吹气检测是否已经开着,避免生日流程被触发两次时重复启麦克风
     private var breathActive = false
 
+    /// 菜单动作都作用在主角身上
+    private var brain: PetBrain { crew.leader }
     private var config: PetConfig { brain.config }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // 不在 Dock 里显示
 
-        let panel = PetPanel(brain: brain)
-        brain.window = panel
-        brain.resetPosition()
-        panel.orderFrontRegardless()
-        self.panel = panel
-
+        crew.onLeaderChanged = { [weak self] _ in self?.wireUpCallbacks() }
         wireUpCallbacks()
+        crew.start()
         setupStatusItem()
         observeScreenChanges()
-        brain.start()
     }
 
     /// 外接屏拔掉、分辨率切换、Dock 换位置都会发这个通知。
@@ -40,13 +36,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.brain.clampToVisibleScreen()
+            self?.crew.clampAll()
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         breath.stop()
-        brain.stop()
+        crew.stopAll()
     }
 
     // MARK: - 大脑回调
@@ -75,10 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// 撒花 = 彩带 + 其他角色集体登场庆祝
+    /// 撒花 = 彩带 + 还没上桌的角色集体登场庆祝
     private func throwConfetti(duration: Double) {
         ConfettiPanel.celebrate(duration: duration)
-        GuestParade.show(host: brain, duration: duration)
+        GuestParade.show(host: brain, duration: duration, residents: Set(crew.activeRoles))
     }
 
     /// 吹气检测:拿不到麦克风权限时安静降级,点蛋糕也能吹灭
@@ -191,9 +187,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item)
     }
 
-    /// 「换个角色」子菜单。只列出 Assets 里真的有素材的角色,当前角色打勾。
+    /// 「谁来陪你」子菜单。勾上就上桌,取消就送走,场上至少留一只。
     private func roleMenuItem() -> NSMenuItem {
-        let parent = NSMenuItem(title: "换个角色", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: "谁来陪你 🐾", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         var items: [NSMenuItem] = []
         for role in brain.assets.availableRoles {
@@ -202,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   keyEquivalent: "")
             item.target = self
             item.representedObject = role.rawValue
-            item.state = role == brain.role ? .on : .off
+            item.state = crew.contains(role) ? .on : .off
             sub.addItem(item)
             items.append(item)
         }
@@ -216,8 +212,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 菜单只建一次,天数会跨天变,打开时现算
         daysItem?.title = daysTogetherTitle()
         for item in roleItems {
-            guard let raw = item.representedObject as? String else { continue }
-            item.state = raw == brain.role.rawValue ? .on : .off
+            guard let raw = item.representedObject as? String,
+                  let role = PetRole(rawValue: raw) else { continue }
+            item.state = crew.contains(role) ? .on : .off
         }
     }
 
@@ -248,7 +245,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let role = PetRole(rawValue: raw)
         else { return }
-        brain.switchRole(to: role)
+        crew.toggle(role)
+        sender.state = crew.contains(role) ? .on : .off
     }
 
     @objc private func showLovePhrase() {
@@ -293,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func resetPosition() {
-        brain.resetPosition()
+        crew.resetPositions()
     }
 
     @objc private func quit() {

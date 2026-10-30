@@ -7,6 +7,9 @@ final class PetPanel: NSPanel {
     /// 主角窗(非嘉宾),供其它面板定位到桌宠所在那块屏
     private(set) static weak var host: PetPanel?
 
+    /// 换主角时把宿主窗指过去
+    static func setHost(_ panel: PetPanel?) { host = panel }
+
     /// - Parameter interactive: false 时完全点击穿透(撒花嘉宾用,不该抢主角的点击)
     init(brain: PetBrain, interactive: Bool = true) {
         let size = brain.windowSize
@@ -38,7 +41,7 @@ final class PetPanel: NSPanel {
         container.addSubview(host)
 
         contentView = container
-        if interactive { PetPanel.host = self }
+        if interactive && brain.isLeader { PetPanel.host = self }
     }
 
     override var canBecomeKey: Bool { false }

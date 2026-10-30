@@ -168,7 +168,7 @@ struct FoodTrayView: View {
                 }
             }
 
-            Text("松手时对准它才算喂到嘴里 · 空白处可拖动")
+            Text("松手时对准谁就喂给谁 · 空白处可拖动")
                 .font(.system(size: 11, design: .rounded))
                 .foregroundColor(ink.opacity(0.45))
         }
@@ -233,11 +233,12 @@ struct FoodTrayView: View {
                 ghost?.move(to: NSEvent.mouseLocation)
             }
             .onEnded { _ in
-                let hit = brain.bodyContains(NSEvent.mouseLocation)
-                ghost?.vanish(success: hit)
+                // 同屏可能站着好几只,松手时对准谁就喂谁
+                let target = PetCrew.shared.brain(at: NSEvent.mouseLocation)
+                ghost?.vanish(success: target != nil)
                 ghost = nil
                 draggingID = nil
-                if hit { brain.feed(item) }
+                target?.feed(item)
             }
     }
 }

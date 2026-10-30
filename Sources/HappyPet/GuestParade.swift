@@ -11,22 +11,25 @@ enum GuestParade {
     private static var brains: [PetBrain] = []
     private static var panels: [PetPanel] = []
     private static var dismissWork: DispatchWorkItem?
-    /// 主角角色。嘉宾散场后只保留它的素材缓存,其余的放掉。
-    private static var hostRole: PetRole?
+    /// 还在场上的角色。嘉宾散场后只保留它们的素材缓存,其余的放掉。
+    private static var residentRoles: Set<PetRole> = []
 
     /// 嘉宾出场时随机挑一句头顶气泡
     private static let cheers = ["一起庆祝", "今天是你的日子", "耶!", "撒花撒花", "happy~"]
 
     /// - Parameters:
-    ///   - host: 主角的大脑,用来排除自己、确定在哪块屏幕上登场
+    ///   - host: 主角的大脑,用来确定在哪块屏幕上登场
     ///   - duration: 停留时长,和撒花时长对齐
-    static func show(host: PetBrain, duration: Double) {
+    ///   - residents: 已经在桌面上的角色(主角 + 同屏伙伴),不重复登场
+    static func show(host: PetBrain, duration: Double, residents: Set<PetRole> = []) {
         dismissAll()
 
-        let guests = host.assets.availableRoles.filter { $0 != host.role }
+        var onStage = residents
+        onStage.insert(host.role)
+        let guests = host.assets.availableRoles.filter { !onStage.contains($0) }
         guard !guests.isEmpty else { return }
 
-        hostRole = host.role
+        residentRoles = onStage
         // 第一个嘉宾马上就要登场,后面的有 0.22s 一个的间隔,先让后台把帧解出来
         host.assets.prewarm(Array(guests.dropFirst()))
 
@@ -56,7 +59,7 @@ enum GuestParade {
     }
 
     private static func spawn(role: PetRole, at origin: NSPoint, delay: Double) {
-        let brain = PetBrain(guestRole: role)
+        let brain = PetBrain(role: role, guest: true)
         let panel = PetPanel(brain: brain, interactive: false)
         panel.setFrameOrigin(origin)
         panel.alphaValue = 0
@@ -96,8 +99,9 @@ enum GuestParade {
         }
 
         // 嘉宾的帧图不用再留着占内存了
-        if let keep = hostRole {
-            hostRole = nil
+        if !residentRoles.isEmpty {
+            let keep = residentRoles
+            residentRoles = []
             PetAssets.shared.releaseRoles(keeping: keep)
         }
     }

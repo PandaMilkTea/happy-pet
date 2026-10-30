@@ -316,7 +316,6 @@ final class PetAssets {
 
     let config: PetConfig
     let birthdaySound: URL?
-    let lovePhrases: [String]
     /// Assets 目录本身,给需要按需扫子目录的模块用(食物图标等)
     let assetsRoot: URL?
 
@@ -329,13 +328,25 @@ final class PetAssets {
     private let lock = NSLock()
     private var roleCache: [PetRole: RoleAssets] = [:]
     private var photoCache: [NSImage]?
+    /// 按角色缓存的台词,第一次用到才去读文件
+    private var loveCache: [PetRole: [String]] = [:]
+    private var purrCache: [PetRole: [String]] = [:]
 
     /// 最近用过的角色,队尾最新。LRU 淘汰就看这个顺序。
     private var recentRoles: [PetRole] = []
-    ///同时留在缓存里的角色上限:当前角色 + 上一个。
+    ///同时留在缓存里的角色上限:默认「当前角色 + 上一个」。
     /// 一个角色的帧解码后是几十 MB 的位图,把 4 个角色全留着没必要。
+    /// 多只同屏时由 PetCrew 用 reserveCacheSlots(for:) 把它顶上去。
     /// 注意被逐出只是不再缓存,正在用的 RoleAssets 还被 PetBrain 强引用着,不会失效。
-    private let roleCacheLimit = 2
+    private var roleCacheLimit = 2
+
+    /// 同屏角色变多时抬高缓存上限(再留一格给上一个角色),变少时再降回来
+    func reserveCacheSlots(for count: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        roleCacheLimit = max(2, count + 1)
+        trimCache()
+    }
 
     /// 菜单里可选的角色,按 PetRole.allCases 的顺序
     var availableRoles: [PetRole] { rolesWithAssets }
@@ -355,6 +366,26 @@ final class PetAssets {
         if let cached = photoCache { return cached }
         let loaded = PetAssets.loadPhotos(in: assetsRoot)
         photoCache = loaded
+        return loaded
+    }
+
+    /// 举牌情话:每个角色一套口吻(猫高冷、狗热情、凯文嘴硬、大明撒娇)
+    func lovePhrases(for role: PetRole) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = loveCache[role] { return cached }
+        let loaded = PetAssets.loadLovePhrases(role, in: assetsRoot)
+        loveCache[role] = loaded
+        return loaded
+    }
+
+    /// 摸头时的咕噜话,同样分角色
+    func purrLines(for role: PetRole) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = purrCache[role] { return cached }
+        let loaded = PetAssets.loadPurrLines(role, in: assetsRoot)
+        purrCache[role] = loaded
         return loaded
     }
 
@@ -386,12 +417,12 @@ final class PetAssets {
         }
     }
 
-    /// 嘉宾散场后把它们的素材从缓存里放掉,只留主角这一份。
-    func releaseRoles(keeping keep: PetRole) {
+    /// 嘉宾散场后把它们的素材从缓存里放掉,只留还在场上的那几只。
+    func releaseRoles(keeping keep: Set<PetRole>) {
         lock.lock()
         defer { lock.unlock() }
-        roleCache = roleCache.filter { $0.key == keep }
-        recentRoles = recentRoles.filter { $0 == keep }
+        roleCache = roleCache.filter { keep.contains($0.key) }
+        recentRoles = recentRoles.filter { keep.contains($0) }
     }
 
     /// 标记成最近使用。调用方已持锁。
@@ -416,7 +447,6 @@ final class PetAssets {
         config = PetAssets.loadConfig(in: root)
         rolesWithAssets = PetAssets.detectRoles(names: fileNames)
         birthdaySound = PetAssets.loadSound(in: root)
-        lovePhrases = PetAssets.loadPhrases(in: root)
 
         if rolesWithAssets.isEmpty {
             print("🎭 没扫到任何角色素材,回退内置橘猫")
@@ -543,22 +573,12 @@ final class PetAssets {
         return nil
     }
 
-    private static func loadPhrases(in root: URL?) -> [String] {
-        guard let url = root?.appendingPathComponent("love.txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8)
-        else { return PetAssets.defaultPhrases }
-        let lines = text
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-        return lines.isEmpty ? PetAssets.defaultPhrases : lines
+    /// 台词都交给 RoleVoice,这里只负责把 Assets 目录递过去
+    private static func loadLovePhrases(_ role: PetRole, in root: URL?) -> [String] {
+        RoleVoice.lovePhrases(for: role, in: root)
     }
 
-    private static let defaultPhrases = [
-        "今天也很喜欢你",
-        "记得喝水哦",
-        "累了就歇一会儿",
-        "我一直都在呢",
-        "你笑起来最好看"
-    ]
+    private static func loadPurrLines(_ role: PetRole, in root: URL?) -> [String] {
+        RoleVoice.purrLines(for: role, in: root)
+    }
 }

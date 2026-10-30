@@ -409,15 +409,37 @@ struct PetView: View {
                     .foregroundColor(Color(red: 0.35, green: 0.45, blue: 0.75).opacity(Double(1 - p) * 0.9))
                     .offset(x: 38 + p * 14, y: -40 - p * 26)
             }
-        } else if isHappy {
-            ForEach(0..<3, id: \.self) { i in
-                let p = CGFloat((t * 0.9 + Double(i) * 0.33).truncatingRemainder(dividingBy: 1))
-                HeartShape()
-                    .fill(blush.opacity(Double(1 - p) * 0.95))
-                    .frame(width: 13 - p * 4, height: 12 - p * 4)
-                    .offset(x: (i % 2 == 0 ? 34 : -34) + p * 6, y: -44 - p * 30)
-            }
+        } else if isHappy, brain.heartLevel > 0 {
+            happyHearts
         }
+    }
+
+    /// 开心时冒的心心。喂对了最爱会翻倍爆发(heartLevel == 2)。
+    @ViewBuilder
+    private var happyHearts: some View {
+        let burst: Bool = brain.heartLevel >= 2
+        let count: Int = burst ? 7 : 3
+        ForEach(0..<count, id: \.self) { i in
+            happyHeart(i, count: count, burst: burst)
+        }
+    }
+
+    private func happyHeart(_ i: Int, count: Int, burst: Bool) -> some View {
+        let speed: Double = burst ? 1.25 : 0.9
+        let step: Double = 1.0 / Double(count)
+        let raw: Double = (t * speed + Double(i) * step).truncatingRemainder(dividingBy: 1)
+        let p: CGFloat = CGFloat(raw)
+        let size: CGFloat = burst ? 19 : 13
+        // 爆发时左右交错铺开,普通时固定从两侧冒
+        let wobble: CGFloat = CGFloat(sin(raw * 5 + Double(i)) * 7)
+        let x: CGFloat = burst
+            ? CGFloat(i - count / 2) * 15 + wobble
+            : (i % 2 == 0 ? CGFloat(34) : CGFloat(-34)) + p * 6
+        let rise: CGFloat = burst ? 46 : 30
+        return HeartShape()
+            .fill(blush.opacity(Double(1 - p) * 0.95))
+            .frame(width: size - p * 4, height: size - 1 - p * 4)
+            .offset(x: x, y: -44 - p * rise)
     }
 }
 

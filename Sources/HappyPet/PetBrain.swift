@@ -94,6 +94,9 @@ final class PetBrain: ObservableObject {
     /// 嘉宾模式:撒花时临时出场的其他角色。只站着鼓掌,不走动 / 不睡觉 / 不举牌,
     /// 也不会把角色选择写回 UserDefaults(不能污染用户自己挑的主角)。
     let isGuest: Bool
+    /// 主角(队长):多只同屏时只有它负责节日流程、生日蛋糕、以及把角色写回配置。
+    /// 其余同屏伙伴行为完整(会走、会睡、会举牌),只是不插手这些全局的事。
+    private(set) var isLeader = false
 
     /// 兼容旧调用:眼睛快闭上时视为眨眼
     var isBlinking: Bool { pose.eyeOpen < 0.45 }
@@ -122,6 +125,8 @@ final class PetBrain: ObservableObject {
     private(set) var eatProgress: Double = 0
     /// 正在咕噜咕噜(摸头)
     @Published private(set) var isPurring: Bool = false
+    /// 开心时冒几颗心心:0 = 不冒(喂了不爱吃的)、1 = 正常、2 = 爆发(喂对了最爱)
+    @Published private(set) var heartLevel: Int = 1
 
     /// 蜡烛被吹灭时回调(交给 AppDelegate 放撒花 + 音乐)
     var onCandleBlownOut: (() -> Void)?
@@ -179,7 +184,12 @@ final class PetBrain: ObservableObject {
     // MARK: - 投喂 / 摸头计时
     private var eatElapsed: Double = 0
     private var eatBites: Int = 0
-    private let eatDuration: Double = 3.0
+    /// 要嚼几口。爱吃的多嚼几下(像在回味),不爱吃的就两下咽掉
+    private var eatBiteTotal: Int = 3
+    /// 这一份吃多久。爱吃的吃得香但不拖,不爱吃的磨磨蹭蹭
+    private var eatDuration: Double = 3.0
+    /// 当前这份食物合不合口味,决定吃完的反应
+    private var eatTaste: FoodTaste = .fine
     private var purrElapsed: Double = 0
     private let purrDuration: Double = 3.4
     private var chewPhase: Double = 0
@@ -221,12 +231,14 @@ final class PetBrain: ObservableObject {
     /// 距下次查日期还有多久(秒)。不用每帧都问系统时间。
     private var dayCheckCountdown: Double = 20
 
-    /// - Parameter guestRole: 传 nil 就是主角(读用户上次选的角色);传角色名则是撒花嘉宾。
-    init(guestRole: PetRole? = nil) {
+    /// - Parameters:
+    ///   - role: 传 nil 就读用户上次选的角色;传角色名就是指定这一只(同屏伙伴 / 撒花嘉宾)。
+    ///   - guest: true 时只负责开心(撒花嘉宾),不走节日流程、不吃点击。
+    init(role: PetRole? = nil, guest: Bool = false) {
         let shared = PetAssets.shared
-        let initial = guestRole ?? PetRole.stored(default: shared.defaultRole)
-        isGuest = guestRole != nil
-        role = initial
+        let initial = role ?? PetRole.stored(default: shared.defaultRole)
+        isGuest = guest
+        self.role = initial
         let bundle = shared.assets(for: initial)
         roleAssets = bundle
         sprites = SpriteAnimator(frames: bundle.frames, walkPixelsPerFrame: initial.pixelsPerWalkFrame)
@@ -236,13 +248,24 @@ final class PetBrain: ObservableObject {
         sprites.play(opening.spriteAction)
     }
 
+    // MARK: - 身份
+
+    /// 升为主角:接管节日流程,并把这只写回「上次选的角色」。
+    func promoteToLeader() {
+        guard !isGuest, !isLeader else { return }
+        isLeader = true
+        PetRole.store(role)
+        // 已经在场上的伙伴临时升上来时补一次节日检测;启动时的主角由 start() 负责
+        if timer != nil { evaluateOccasion() }
+    }
+
     // MARK: - 角色切换
 
     /// 换一个角色出场。素材整组替换,状态回到待机,位置保持不动。
     func switchRole(to next: PetRole) {
         guard next != role else { return }
         role = next
-        PetRole.store(next)
+        if isLeader { PetRole.store(next) }
         let bundle = assets.assets(for: next)
         roleAssets = bundle
         sprites = SpriteAnimator(frames: bundle.frames, walkPixelsPerFrame: next.pixelsPerWalkFrame)
@@ -279,7 +302,7 @@ final class PetBrain: ObservableObject {
             return
         }
 
-        evaluateOccasion()
+        if isLeader { evaluateOccasion() }
     }
 
     // MARK: - 节日检测
@@ -287,7 +310,7 @@ final class PetBrain: ObservableObject {
     /// 今天是不是什么特别的日子。启动时查一次,之后每 20 秒复查,
     /// 所以 App 挂着不关机也能在午夜自动切到生日 / 纪念日。
     private func evaluateOccasion() {
-        guard !isGuest else { return }
+        guard isLeader else { return }
         checkedDayStamp = PetBrain.dayStamp()
 
         guard let occasion = config.occasionToday else {
@@ -473,8 +496,17 @@ final class PetBrain: ObservableObject {
         fallVelocity = 0
         velX = 0
         impactElapsed = 0
+        // 合不合口味,吃相完全不一样
+        eatTaste = item.taste(for: role)
+        switch eatTaste {
+        case .loved: eatDuration = 3.4; eatBiteTotal = 4   // 吃得香,多嚼两口
+        case .fine:  eatDuration = 3.0; eatBiteTotal = 3
+        case .hated: eatDuration = 4.4; eatBiteTotal = 2   // 一口能磨半天
+        }
         switchTo(.eat, duration: eatDuration)
         showBubble(item.greeting(for: role), duration: 2.4)
+        // 不爱吃的先摇头抗议一下,再勉为其难开动
+        if eatTaste == .hated { playGesture(.lookAround, duration: 1.3) }
     }
 
     /// 双击摸头:咕噜咕噜 + 冒心心
@@ -491,22 +523,15 @@ final class PetBrain: ObservableObject {
         purrElapsed = 0
         velX = 0
         switchTo(.purr, duration: purrDuration)
-        showBubble(PetBrain.purrLines.randomElement() ?? "咕噜咕噜~", duration: 2.8)
+        showBubble(assets.purrLines(for: role).randomElement() ?? "咕噜咕噜~", duration: 2.8)
     }
-
-    private static let purrLines = [
-        "咕噜咕噜~",
-        "舒服…再摸摸",
-        "最喜欢被你摸头了",
-        "呼噜噜…要化了",
-        "摸头!开心!"
-    ]
 
     private func updateEat(_ dt: Double) {
         eatElapsed += dt
         eatProgress = min(1, eatElapsed / eatDuration)
-        // 分三口吃完,每咬一口挤一下身体,看着才像真在咀嚼
-        let bite = min(3, Int(eatProgress * 3.0 + 0.0001))
+        // 一口一口吃完,每咬一口挤一下身体,看着才像真在咀嚼
+        let total = Double(eatBiteTotal)
+        let bite = min(eatBiteTotal, Int(eatProgress * total + 0.0001))
         if bite > eatBites {
             eatBites = bite
             impactElapsed = 0
@@ -516,7 +541,12 @@ final class PetBrain: ObservableObject {
         eatingFood = nil
         eatProgress = 0
         hopPhase = 0
-        switchTo(.happy, duration: 2.2)
+        // 喂对了就蹦久一点、心心加倍;喂错了草草收场,一颗心心也没有
+        switch eatTaste {
+        case .loved: heartLevel = 2; switchTo(.happy, duration: 3.6)
+        case .fine:  heartLevel = 1; switchTo(.happy, duration: 2.2)
+        case .hated: heartLevel = 0; switchTo(.happy, duration: 1.2)
+        }
         if let finished { showBubble(finished.afterword(for: role), duration: 3.2) }
     }
 
@@ -563,7 +593,7 @@ final class PetBrain: ObservableObject {
 
     /// 立刻举一次牌。不传文案就从 love.txt 随机抽一句(避免连续重复)。
     func showSign(_ text: String? = nil, duration: Double = 6) {
-        let phrases = assets.lovePhrases
+        let phrases = assets.lovePhrases(for: role)
         var content = text
         if content == nil, !phrases.isEmpty {
             var idx = Int.random(in: 0..<phrases.count)
@@ -608,6 +638,16 @@ final class PetBrain: ObservableObject {
         let frame = screen.visibleFrame
         posX = Double(frame.maxX - windowSize.width - 20)
         posY = Double(frame.minY)
+        velX = 0
+        fallVelocity = 0
+        applyPosition()
+        switchTo(.idle)
+    }
+
+    /// 直接站到指定的屏幕坐标(多只同屏时由 PetCrew 排位用)
+    func place(at origin: NSPoint) {
+        posX = Double(origin.x)
+        posY = Double(origin.y)
         velX = 0
         fallVelocity = 0
         applyPosition()
@@ -697,7 +737,7 @@ final class PetBrain: ObservableObject {
     /// 盯着日期变化。跨过午夜(或睡眠唤醒后发现换天了)就重新评估一次节日,
     /// 这样生日 / 纪念日当天不用重启 App 也会自己冒出来。
     private func updateDayWatch(_ dt: Double) {
-        guard !isGuest else { return }
+        guard isLeader else { return }
         dayCheckCountdown -= dt
         guard dayCheckCountdown <= 0 else { return }
         dayCheckCountdown = 20
@@ -912,6 +952,8 @@ final class PetBrain: ObservableObject {
             if next == .happy { hopPhase = 0 }
             if next == .drag { dragVelX = 0; dragVelY = 0; dragPhase = 0 }
             if next != .idle { gesture = .none }
+            // 心心档位只对「这一次」开心有效,离开 happy 就回到默认
+            if next != .happy { heartLevel = 1 }
         }
         state = next
         stateElapsed = 0
@@ -984,7 +1026,16 @@ final class PetBrain: ObservableObject {
         }
     }
 
-    /// 小动作的进出包络:两头为 0,中间为 1,保证不会突然开始 / 结束
+    /// 手动点一个小动作(比如喂到不爱吃的,先摇摇头)。
+    /// 不受 idle 限制,吃东西 / 开心的时候也能叠上去。
+    private func playGesture(_ g: IdleGesture, duration: Double) {
+        gesture = g
+        gestureElapsed = 0
+        gestureDuration = duration
+        gestureCountdown = Double.random(in: 3...7)
+    }
+
+    /// 小动作的进出包络:两头为 0,中间为 1,保证不会突然开始/结束
     private var gestureEnvelope: Double {
         guard gesture != .none, gestureDuration > 0 else { return 0 }
         let p = min(1, max(0, gestureElapsed / gestureDuration))

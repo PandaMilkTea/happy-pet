@@ -47,9 +47,10 @@ final class GiftStore {
 
     static let shared = GiftStore()
 
-    /// 每次拆开都重新抽一次:照片和情话会换,兑换券保持原样
-    func makeItems() -> [GiftItem] {
-        GiftStore.build(assets: PetAssets.shared)
+    /// 每次拆开都重新抽一次:照片和情话会换,兑换券保持原样。
+    /// `voice` 决定情话的口吻,默认用凯文(礼物本来就是他送的)。
+    func makeItems(voice: PetRole = .boy) -> [GiftItem] {
+        GiftStore.build(assets: PetAssets.shared, voice: voice)
     }
 
     private static let usedKey = "HappyPet.usedCoupons"
@@ -71,7 +72,7 @@ final class GiftStore {
 
     // MARK: 组装
 
-    private static func build(assets: PetAssets) -> [GiftItem] {
+    private static func build(assets: PetAssets, voice: PetRole) -> [GiftItem] {
         let config = assets.config
         var result: [GiftItem] = []
 
@@ -113,7 +114,7 @@ final class GiftStore {
         }
 
         // 4. 情话:随机抽三句
-        for (i, phrase) in assets.lovePhrases.shuffled().prefix(3).enumerated() {
+        for (i, phrase) in assets.lovePhrases(for: voice).shuffled().prefix(3).enumerated() {
             result.append(GiftItem(
                 id: "words-\(i)",
                 kind: .words,
