@@ -113,20 +113,25 @@ struct GiftListView: View {
         .background(cardBackground)
     }
 
-    /// 合照卡片:拍立得一样留个白边
+    /// 合照卡片:整张照片完整放进来,横图竖图都不裁
     private func photoCard(_ image: NSImage) -> some View {
         VStack(spacing: 10) {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 256, height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(ink.opacity(0.05))
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+            }
+            .frame(width: 262, height: 224)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
             Text("那天的我们")
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundColor(ink.opacity(0.65))
         }
-        .padding(.top, 20)
+        .padding(.top, 18)
         .padding(.bottom, 14)
         .frame(width: 300, height: 300)
         .background(cardBackground)

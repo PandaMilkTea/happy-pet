@@ -104,9 +104,8 @@ final class GiftStore {
             ))
         }
 
-        // 3. 合照:最多挑三张
-        let photos = assets.photos.shuffled().prefix(3)
-        for (i, photo) in photos.enumerated() {
+        // 3. 合照:photos 目录里的全都放进来
+        for (i, photo) in assets.photos.enumerated() {
             result.append(GiftItem(
                 id: "photo-\(i)",
                 kind: .photo,

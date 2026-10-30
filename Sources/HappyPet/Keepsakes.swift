@@ -62,7 +62,7 @@ final class PhotoPanel: CenteredPanel {
     }
 
     private init(caption: String) {
-        super.init(size: CGSize(width: 440, height: 440))
+        super.init(size: CGSize(width: 440, height: 500))
         let view = PhotoCardView(
             photos: PetAssets.shared.photos,
             caption: caption,
@@ -99,13 +99,13 @@ struct PhotoCardView: View {
                 }
             }
             .onReceive(ticker) { _ in advance() }
-            .frame(width: 440, height: 440)
+            .frame(width: 440, height: 500)
     }
 
     private var card: some View {
         VStack(spacing: 12) {
             photoArea
-                .frame(width: 348, height: 268)
+                .frame(width: 348, height: 326)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -165,12 +165,15 @@ struct PhotoCardView: View {
                 }
             }
         } else {
-            Image(nsImage: photos[min(index, photos.count - 1)])
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fill)
-                .id(index)
-                .transition(.opacity.animation(.easeInOut(duration: 0.35)))
+            ZStack {
+                Color(red: 0.94, green: 0.93, blue: 0.92)
+                Image(nsImage: photos[min(index, photos.count - 1)])
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+            }
+            .id(index)
+            .transition(.opacity.animation(.easeInOut(duration: 0.35)))
         }
     }
 
