@@ -54,29 +54,46 @@ class CenteredPanel: NSPanel {
 
 // MARK: - 照片彩蛋
 
-/// 连戳 10 次解锁:拍立得样式的合照轮播
+/// 连戳解锁:拍立得样式的照片,默认是那张全家福
 final class PhotoPanel: CenteredPanel {
 
     private static var current: PhotoPanel?
+    /// 相纸里照片区的宽度固定,高度按照片比例算
+    private static let photoWidth: CGFloat = 348
 
-    static func show(caption: String) {
+    static func show(photos: [NSImage], caption: String) {
         current?.orderOut(nil)
-        let panel = PhotoPanel(caption: caption)
+        let panel = PhotoPanel(photos: photos, caption: caption)
         panel.makeKeyAndOrderFront(nil)
         current = panel
     }
 
-    private init(caption: String) {
-        super.init(size: CGSize(width: 440, height: 500))
+    private init(photos: [NSImage], caption: String) {
+        let photoSize = PhotoPanel.photoArea(for: photos)
+        super.init(size: CGSize(width: photoSize.width + 92,
+                                height: photoSize.height + 174))
         let view = PhotoCardView(
-            photos: PetAssets.shared.photos.shuffled(),
+            photos: photos,
             caption: caption,
+            photoSize: photoSize,
+            canvas: frame.size,
             onClose: { [weak self] in self?.dismiss() }
         )
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: frame.size)
         host.autoresizingMask = [.width, .height]
         contentView = host
+    }
+
+    /// 只有一张照片时贴着它的比例排版(等比内接到 348×460),多张轮播就用固定的方形留白
+    private static func photoArea(for photos: [NSImage]) -> CGSize {
+        guard photos.count == 1, let photo = photos.first,
+              photo.size.width > 0, photo.size.height > 0
+        else { return CGSize(width: photoWidth, height: 326) }
+        let maxHeight: CGFloat = 460
+        let scale = min(photoWidth / photo.size.width, maxHeight / photo.size.height)
+        return CGSize(width: (photo.size.width * scale).rounded(),
+                      height: (photo.size.height * scale).rounded())
     }
 }
 
@@ -85,6 +102,8 @@ struct PhotoCardView: View {
 
     let photos: [NSImage]
     let caption: String
+    let photoSize: CGSize
+    let canvas: CGSize
     let onClose: () -> Void
 
     @State private var index = 0
@@ -104,13 +123,13 @@ struct PhotoCardView: View {
                 }
             }
             .onReceive(ticker) { _ in advance() }
-            .frame(width: 440, height: 500)
+            .frame(width: canvas.width, height: canvas.height)
     }
 
     private var card: some View {
         VStack(spacing: 12) {
             photoArea
-                .frame(width: 348, height: 326)
+                .frame(width: photoSize.width, height: photoSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -122,7 +141,7 @@ struct PhotoCardView: View {
                 .foregroundColor(Color(red: 0.30, green: 0.22, blue: 0.24))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .frame(width: 330)
+                .frame(width: photoSize.width - 18)
 
             if photos.count > 1 { indicator }
         }
@@ -152,7 +171,7 @@ struct PhotoCardView: View {
                     HeartShape()
                         .fill(Color.white.opacity(0.9))
                         .frame(width: 54, height: 50)
-                    Text("把合照放进 Assets/photos 就会出现在这里")
+                    Text("把全家福放成 Assets/family.jpg 就会出现在这里")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.95))
                         .multilineTextAlignment(.center)

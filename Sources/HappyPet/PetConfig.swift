@@ -328,6 +328,8 @@ final class PetAssets {
     private let lock = NSLock()
     private var roleCache: [PetRole: RoleAssets] = [:]
     private var photoCache: [NSImage]?
+    /// 全家福彩蛋。外层 Optional 表示「找过没有」,内层表示「有没有这张图」
+    private var familyCache: NSImage??
     /// 按角色缓存的台词,第一次用到才去读文件
     private var loveCache: [PetRole: [String]] = [:]
     private var purrCache: [PetRole: [String]] = [:]
@@ -366,6 +368,16 @@ final class PetAssets {
         if let cached = photoCache { return cached }
         let loaded = PetAssets.loadPhotos(in: assetsRoot)
         photoCache = loaded
+        return loaded
+    }
+
+    /// 连戳彩蛋专属的全家福:Assets/family.jpg(或 png/jpeg/heic),没有就返回 nil
+    var familyPhoto: NSImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = familyCache { return cached }
+        let loaded = PetAssets.loadFamilyPhoto(in: assetsRoot)
+        familyCache = .some(loaded)
         return loaded
     }
 
@@ -562,6 +574,25 @@ final class PetAssets {
             .filter { ["jpg", "jpeg", "png", "heic"].contains(($0 as NSString).pathExtension.lowercased()) }
             .sorted()
             .compactMap { NSImage(contentsOf: dir.appendingPathComponent($0)) }
+    }
+
+    /// 全家福只认一个固定位置:Assets/family.*(大小写无关),也兼容放进 Assets/family/ 目录
+    private static func loadFamilyPhoto(in root: URL?) -> NSImage? {
+        guard let root else { return nil }
+        let exts = ["jpg", "jpeg", "png", "heic"]
+        for ext in exts {
+            let url = root.appendingPathComponent("family.\(ext)")
+            if let image = NSImage(contentsOf: url) { return image }
+        }
+        let dir = root.appendingPathComponent("family", isDirectory: true)
+        if let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
+            let first = names
+                .filter { exts.contains(($0 as NSString).pathExtension.lowercased()) }
+                .sorted()
+                .first
+            if let first { return NSImage(contentsOf: dir.appendingPathComponent(first)) }
+        }
+        return nil
     }
 
     private static func loadSound(in root: URL?) -> URL? {

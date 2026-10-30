@@ -53,11 +53,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - 大脑回调
 
-    /// 每只角色都该有的回调:谁被连戳十下,谁就掏出照片
+    /// 每只角色都该有的回调:谁被连戳六下,谁就掏出那张全家福
     private func wireShared(to member: PetBrain) {
         member.onPhotoEasterEgg = { [weak self] in
             guard let self else { return }
-            PhotoPanel.show(caption: "和\(self.config.nickname)的那些日子")
+            if let family = PetAssets.shared.familyPhoto {
+                PhotoPanel.show(
+                    photos: [family],
+                    caption: "我们一家人 · 永远陪着\(self.config.nickname)"
+                )
+            } else {
+                PhotoPanel.show(
+                    photos: PetAssets.shared.photos.shuffled(),
+                    caption: "和\(self.config.nickname)的那些日子"
+                )
+            }
         }
     }
 
@@ -279,7 +289,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showPhotos() {
-        PhotoPanel.show(caption: "和\(config.nickname)的那些日子")
+        PhotoPanel.show(
+            photos: PetAssets.shared.photos.shuffled(),
+            caption: "和\(config.nickname)的那些日子"
+        )
     }
 
     @objc private func openGift() {
