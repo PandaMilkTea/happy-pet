@@ -237,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openGift() {
-        GiftPanel.show(message: config.birthdayWish)
+        GiftPanel.show()
     }
 
     /// 「在一起 N 天 · X 年 X 个月 X 天」菜单标题。周年当天额外标一下。

@@ -196,28 +196,59 @@ struct PhotoCardView: View {
 
 // MARK: - 礼物盒
 
-/// 点三下才拆开的礼物盒
+/// 点三下拆开,然后一张张翻礼物清单
 final class GiftPanel: CenteredPanel {
 
     private static var current: GiftPanel?
 
-    static func show(message: String) {
+    static func show() {
         current?.orderOut(nil)
-        let panel = GiftPanel(message: message)
+        let panel = GiftPanel()
         panel.makeKeyAndOrderFront(nil)
         current = panel
     }
 
-    private init(message: String) {
-        super.init(size: CGSize(width: 320, height: 340))
-        let view = GiftBoxView(
-            message: message,
-            onOpened: { ConfettiPanel.celebrate(duration: 8) },
+    private init() {
+        super.init(size: CGSize(width: 400, height: 500))
+        let view = GiftFlowView(
+            items: GiftStore.shared.items,
             onClose: { [weak self] in self?.dismiss() }
         )
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: frame.size)
         host.autoresizingMask = [.width, .height]
         contentView = host
+    }
+}
+
+/// 拆盒 → 清单两个阶段
+struct GiftFlowView: View {
+
+    let items: [GiftItem]
+    let onClose: () -> Void
+
+    @State private var showList = false
+
+    var body: some View {
+        ZStack {
+            if showList {
+                GiftListView(items: items, onClose: onClose)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            } else {
+                GiftBoxView(
+                    message: items.isEmpty ? "🎉" : "里面有 \(items.count) 件东西",
+                    onOpened: {
+                        ConfettiPanel.celebrate(duration: 8)
+                        guard !items.isEmpty else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
+                            withAnimation(.easeInOut(duration: 0.42)) { showList = true }
+                        }
+                    },
+                    onClose: onClose
+                )
+                .transition(.opacity)
+            }
+        }
+        .frame(width: 400, height: 500)
     }
 }
