@@ -8,9 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var followItem: NSMenuItem?
     private var roleItems: [NSMenuItem] = []
+    private var daysItem: NSMenuItem?
 
     private let breath = BreathDetector()
     private var player: AVAudioPlayer?
+    /// 吹气检测是否已经开着,避免生日流程被触发两次时重复启麦克风
+    private var breathActive = false
 
     private var config: PetConfig { brain.config }
 
@@ -26,8 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wireUpCallbacks()
         setupStatusItem()
         brain.start()
-
-        if config.isBirthdayToday { startBreathDetection() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         brain.onCandleBlownOut = { [weak self] in
             guard let self else { return }
             self.breath.stop()
+            self.breathActive = false
             self.throwConfetti(duration: 14)
             self.playBirthdaySong()
         }
@@ -50,8 +52,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             PhotoPanel.show(caption: "和\(self.config.nickname)的那些日子")
         }
 
-        brain.onMilestone = { [weak self] in
-            self?.throwConfetti(duration: 7)
+        brain.onCelebration = { [weak self] occasion in
+            self?.throwConfetti(duration: occasion.confettiDuration)
+        }
+
+        // 生日模式可能在启动时进入,也可能是 App 挂到午夜自动进入,麦克风跟着它开
+        brain.onBirthdayBegan = { [weak self] in
+            self?.startBreathDetection()
         }
     }
 
@@ -63,11 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// 吹气检测:拿不到麦克风权限时安静降级,点蛋糕也能吹灭
     private func startBreathDetection() {
+        guard !breathActive else { return }
+        breathActive = true
         breath.onBlow = { [weak self] in
             self?.brain.blowOutCandle()
         }
         breath.start { [weak self] ok in
             guard let self, !ok else { return }
+            self.breathActive = false
             self.brain.showBubble("点一下蛋糕就能吹蜡烛啦", duration: 8)
         }
     }
@@ -144,10 +154,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         addItem(to: menu, title: "回到屏幕右下角", action: #selector(resetPosition))
 
-        if let days = config.daysTogether {
-            let info = NSMenuItem(title: "在一起 \(days) 天", action: nil, keyEquivalent: "")
-            info.isEnabled = false
-            menu.addItem(info)
+        if config.daysTogether != nil {
+            let item = NSMenuItem(title: daysTogetherTitle(),
+                                  action: #selector(showDaysTogether),
+                                  keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+            daysItem = item
         }
 
         menu.addItem(.separator())
@@ -185,6 +198,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         followItem?.state = brain.followMouse ? .on : .off
+        // 菜单只建一次,天数会跨天变,打开时现算
+        daysItem?.title = daysTogetherTitle()
         for item in roleItems {
             guard let raw = item.representedObject as? String else { continue }
             item.state = raw == brain.role.rawValue ? .on : .off
@@ -225,10 +240,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         GiftPanel.show(message: config.birthdayWish)
     }
 
+    /// 「在一起 N 天 · X 年 X 个月 X 天」菜单标题。周年当天额外标一下。
+    private func daysTogetherTitle() -> String {
+        guard let summary = config.togetherSummary else { return "在一起" }
+        if config.isAnniversaryToday, let years = config.yearsTogether, years >= 1 {
+            return "\(summary) · \(years) 周年 🎉"
+        }
+        return summary
+    }
+
+    @objc private func showDaysTogether() {
+        if let occasion = config.occasionToday, !occasion.isBirthday {
+            brain.showSign(occasion.sign, duration: 9)
+            if let span = config.togetherSpanText {
+                brain.showBubble(span, duration: 6)
+            }
+        } else if let sign = config.togetherSignText {
+            brain.showSign(sign, duration: 9)
+        }
+    }
+
     @objc private func replayBirthday() {
         stopBirthdaySong()
         brain.enterBirthdayMode()
-        startBreathDetection()
     }
 
     @objc private func celebrate() {

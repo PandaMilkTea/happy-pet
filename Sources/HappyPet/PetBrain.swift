@@ -114,8 +114,10 @@ final class PetBrain: ObservableObject {
     var onCandleBlownOut: (() -> Void)?
     /// 连戳满 10 次的照片彩蛋回调
     var onPhotoEasterEgg: (() -> Void)?
-    /// 整百天纪念回调
-    var onMilestone: (() -> Void)?
+    /// 纪念日 / 周年庆祝回调(撒花时长由 occasion 决定)
+    var onCelebration: ((PetOccasion) -> Void)?
+    /// 进入生日模式(启动时 / 跨到生日那天 / 菜单重放)时回调,用来开麦克风听吹气
+    var onBirthdayBegan: (() -> Void)?
 
     // MARK: - 可调参数
     /// 窗口比宠物本体大一圈,上方留给举牌 / 气泡,下方留给蛋糕
@@ -192,6 +194,12 @@ final class PetBrain: ObservableObject {
     private var pokeStreakDeadline: Double = 0
     private var lastPhraseIndex: Int = -1
 
+    // MARK: - 节日检测
+    /// 上次评估节日时是哪一天(yyyyMMdd)。App 常驻跨过午夜时靠它发现「换天了」。
+    private var checkedDayStamp: Int = 0
+    /// 距下次查日期还有多久(秒)。不用每帧都问系统时间。
+    private var dayCheckCountdown: Double = 20
+
     /// - Parameter guestRole: 传 nil 就是主角(读用户上次选的角色);传角色名则是撒花嘉宾。
     init(guestRole: PetRole? = nil) {
         let shared = PetAssets.shared
@@ -250,17 +258,64 @@ final class PetBrain: ObservableObject {
             return
         }
 
-        if config.isBirthdayToday {
-            enterBirthdayMode()
-        } else if config.isMilestoneDay, let d = config.daysTogether {
-            showBubble("在一起 \(d) 天啦", duration: 8)
-            switchTo(.happy, duration: 2.5)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                self?.onMilestone?()
-            }
-        } else if let d = config.daysTogether {
-            showBubble("在一起 \(d) 天", duration: 6)
+        evaluateOccasion()
+    }
+
+    // MARK: - 节日检测
+
+    /// 今天是不是什么特别的日子。启动时查一次,之后每 20 秒复查,
+    /// 所以 App 挂着不关机也能在午夜自动切到生日 / 纪念日。
+    private func evaluateOccasion() {
+        guard !isGuest else { return }
+        checkedDayStamp = PetBrain.dayStamp()
+
+        guard let occasion = config.occasionToday else {
+            return
         }
+
+        if occasion.isBirthday {
+            // 生日是当天的主体验,重启也应该重新捧上蛋糕,所以不做跨启动去重
+            enterBirthdayMode()
+            return
+        }
+
+        // 纪念日只自动庆祝一次,当天重复启动不再反复撒花
+        guard !PetBrain.hasCelebrated(occasion) else { return }
+        PetBrain.markCelebrated(occasion)
+
+        showBubble(occasion.bubble, duration: 8)
+        switchTo(.happy, duration: 2.8)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.onCelebration?(occasion)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 9) { [weak self] in
+            guard let self, !self.isHoldingCake else { return }
+            self.showSign(occasion.sign, duration: 9)
+            // 牌子说心意,气泡顺手补一句「几年几个月几天」
+            if let span = self.config.togetherSpanText {
+                self.showBubble(span, duration: 7)
+            }
+        }
+    }
+
+    /// 日期指纹,形如 20261031
+    private static func dayStamp(_ date: Date = Date()) -> Int {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return (c.year ?? 0) * 10000 + (c.month ?? 0) * 100 + (c.day ?? 0)
+    }
+
+    private static let celebratedKey = "HappyPet.lastCelebration"
+
+    private static func celebrationToken(_ occasion: PetOccasion) -> String {
+        "\(dayStamp())#\(occasion.key)"
+    }
+
+    private static func hasCelebrated(_ occasion: PetOccasion) -> Bool {
+        UserDefaults.standard.string(forKey: celebratedKey) == celebrationToken(occasion)
+    }
+
+    private static func markCelebrated(_ occasion: PetOccasion) {
+        UserDefaults.standard.set(celebrationToken(occasion), forKey: celebratedKey)
     }
 
     func stop() {
@@ -308,6 +363,15 @@ final class PetBrain: ObservableObject {
             }
         } else if pokeStreak == 6 {
             showBubble("再戳就有惊喜了哦", duration: 2.5)
+        } else if pokeStreak == 1, bubbleText == nil, Int.random(in: 0..<12) == 0,
+                  let d = config.daysTogether {
+            // 平日里偶尔才提一次天数,比每次启动都报数更像惊喜。
+            // 两种说法随机挑一个:要么报总天数,要么报几年几个月几天。
+            if let span = config.togetherSpanText, Bool.random() {
+                showBubble("我们已经在一起 \(span) 啦", duration: 4)
+            } else {
+                showBubble("今天是我们一起的第 \(d) 天哦", duration: 4)
+            }
         }
 
         if !isHoldingCake {
@@ -326,6 +390,7 @@ final class PetBrain: ObservableObject {
         signText = nil
         switchTo(.cake, duration: .infinity)
         showBubble("对着麦克风吹一下 🎂", duration: 10)
+        onBirthdayBegan?()
     }
 
     func exitBirthdayMode() {
@@ -415,6 +480,7 @@ final class PetBrain: ObservableObject {
 
         updateBlink(dt)
         updateSignAndBubble(dt)
+        updateDayWatch(dt)
 
         switch state {
         case .walk:
@@ -453,6 +519,19 @@ final class PetBrain: ObservableObject {
         if state == .idle, signText != nil { return "sign" }
         if state == .happy, pokeStreak > 0, sprites.has("poke") { return "poke" }
         return state.spriteAction
+    }
+
+    /// 盯着日期变化。跨过午夜(或睡眠唤醒后发现换天了)就重新评估一次节日,
+    /// 这样生日 / 纪念日当天不用重启 App 也会自己冒出来。
+    private func updateDayWatch(_ dt: Double) {
+        guard !isGuest else { return }
+        dayCheckCountdown -= dt
+        guard dayCheckCountdown <= 0 else { return }
+        dayCheckCountdown = 20
+        guard PetBrain.dayStamp() != checkedDayStamp else { return }
+        // 正捧着蛋糕就先不打扰,等这轮生日流程走完
+        guard !isHoldingCake else { return }
+        evaluateOccasion()
     }
 
     /// 举牌与气泡的倒计时;平时每隔一段时间自动举一次牌

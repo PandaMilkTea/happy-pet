@@ -63,10 +63,76 @@ struct PetConfig: Codable {
         return days + 1
     }
 
-    /// 是否是整百天纪念(100 / 200 / 520 / 1000 …)
-    var isMilestoneDay: Bool {
-        guard let d = daysTogether else { return false }
-        return d % 100 == 0 || d == 520 || d == 1314
+    /// 在一起的整年数(今天是纪念日当天时才有意义)
+    var yearsTogether: Int? {
+        guard let anniversary, let start = PetConfig.dateFormatter.date(from: anniversary) else {
+            return nil
+        }
+        return Calendar.current.dateComponents(
+            [.year],
+            from: Calendar.current.startOfDay(for: start),
+            to: Calendar.current.startOfDay(for: Date())
+        ).year
+    }
+
+    /// 今天是否是每年的纪念日(月 / 日都对得上)
+    var isAnniversaryToday: Bool {
+        guard let anniversary, let start = PetConfig.dateFormatter.date(from: anniversary) else {
+            return false
+        }
+        let cal = Calendar.current
+        let a = cal.dateComponents([.month, .day], from: start)
+        let b = cal.dateComponents([.month, .day], from: Date())
+        return a.month == b.month && a.day == b.day
+    }
+
+    /// 在一起多久的「年 / 月 / 天」说法,例如 "5 年 6 个月 25 天"。
+    /// 不满一年就省掉年,不满一个月就只剩天数。
+    var togetherSpanText: String? {
+        guard let anniversary, let start = PetConfig.dateFormatter.date(from: anniversary) else {
+            return nil
+        }
+        let cal = Calendar.current
+        let c = cal.dateComponents(
+            [.year, .month, .day],
+            from: cal.startOfDay(for: start),
+            to: cal.startOfDay(for: Date())
+        )
+        guard let y = c.year, let m = c.month, let d = c.day, y >= 0, m >= 0, d >= 0 else {
+            return nil
+        }
+        var parts: [String] = []
+        if y > 0 { parts.append("\(y) 年") }
+        if m > 0 { parts.append("\(m) 个月") }
+        if d > 0 || parts.isEmpty { parts.append("\(d) 天") }
+        return parts.joined(separator: " ")
+    }
+
+    /// 一行里把两种说法都摆出来:"在一起 2035 天 · 5 年 6 个月 25 天"
+    var togetherSummary: String? {
+        guard let days = daysTogether else { return nil }
+        guard let span = togetherSpanText else { return "在一起 \(days) 天" }
+        return "在一起 \(days) 天 · \(span)"
+    }
+
+    /// 举牌用的两行版(牌子窄,横排放不下)
+    var togetherSignText: String? {
+        guard let days = daysTogether else { return nil }
+        guard let span = togetherSpanText else { return "在一起 \(days) 天" }
+        return "在一起 \(days) 天\n\(span)"
+    }
+
+    /// 今天值得庆祝的事,没有就是 nil。优先级:生日 > 周年 > 1314 > 520 > 整百天。
+    var occasionToday: PetOccasion? {
+        if isBirthdayToday { return .birthday }
+        guard let days = daysTogether else { return nil }
+        if isAnniversaryToday, let years = yearsTogether, years >= 1 {
+            return .anniversary(years: years, days: days)
+        }
+        if days == 1314 { return .days1314 }
+        if days == 520 { return .days520 }
+        if days % 100 == 0 { return .hundredDays(days) }
+        return nil
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -75,6 +141,68 @@ struct PetConfig: Codable {
         f.locale = Locale(identifier: "en_US_POSIX")
         return f
     }()
+}
+
+// MARK: - 值得庆祝的日子
+
+/// 今天是什么日子。只在当天自动触发一次,靠 key 做去重。
+enum PetOccasion: Equatable {
+    /// 生日
+    case birthday
+    /// 每年的纪念日当天
+    case anniversary(years: Int, days: Int)
+    /// 在一起 520 天
+    case days520
+    /// 在一起 1314 天
+    case days1314
+    /// 在一起整百天
+    case hundredDays(Int)
+
+    var isBirthday: Bool { self == .birthday }
+
+    /// 去重用的稳定标识
+    var key: String {
+        switch self {
+        case .birthday:                 return "birthday"
+        case .anniversary(let y, _):    return "anniversary-\(y)"
+        case .days520:                  return "d520"
+        case .days1314:                 return "d1314"
+        case .hundredDays(let d):       return "d\(d)"
+        }
+    }
+
+    /// 头顶气泡文案
+    var bubble: String {
+        switch self {
+        case .birthday:                 return "今天是你的生日 🎂"
+        case .anniversary(let y, _):    return "我们在一起 \(y) 周年啦"
+        case .days520:                  return "520 天,刚好是我想说的话"
+        case .days1314:                 return "1314 天,一生一世"
+        case .hundredDays(let d):       return "在一起 \(d) 天啦"
+        }
+    }
+
+    /// 庆祝之后举的那块牌子
+    var sign: String {
+        switch self {
+        case .birthday:                 return "生日快乐"
+        case .anniversary(let y, let d): return "第 \(y) 年,第 \(d) 天,还想继续"
+        case .days520:                  return "我爱你"
+        case .days1314:                 return "一生一世,说到做到"
+        case .hundredDays:              return "往后的每一百天也一起过"
+        }
+    }
+
+    /// 配套撒花的时长(秒)
+    var confettiDuration: Double {
+        switch self {
+        case .birthday:    return 14
+        case .anniversary: return 10
+        case .days1314:    return 10
+        case .days520:     return 9
+        case .hundredDays: return 7
+        }
+    }
 }
 
 // MARK: - 角色
