@@ -4,7 +4,8 @@ import SwiftUI
 /// 承载宠物的无边框透明悬浮窗
 final class PetPanel: NSPanel {
 
-    init(brain: PetBrain) {
+    /// - Parameter interactive: false 时完全点击穿透(撒花嘉宾用,不该抢主角的点击)
+    init(brain: PetBrain, interactive: Bool = true) {
         let size = brain.windowSize
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
@@ -22,6 +23,7 @@ final class PetPanel: NSPanel {
         hidesOnDeactivate = false
         isMovableByWindowBackground = false
         animationBehavior = .none
+        ignoresMouseEvents = !interactive
 
         let container = PetContainerView(brain: brain)
         container.frame = NSRect(origin: .zero, size: size)

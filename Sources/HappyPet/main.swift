@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         brain.onCandleBlownOut = { [weak self] in
             guard let self else { return }
             self.breath.stop()
-            ConfettiPanel.celebrate(duration: 14)
+            self.throwConfetti(duration: 14)
             self.playBirthdaySong()
         }
 
@@ -50,9 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             PhotoPanel.show(caption: "和\(self.config.nickname)的那些日子")
         }
 
-        brain.onMilestone = {
-            ConfettiPanel.celebrate(duration: 7)
+        brain.onMilestone = { [weak self] in
+            self?.throwConfetti(duration: 7)
         }
+    }
+
+    /// 撒花 = 彩带 + 其他角色集体登场庆祝
+    private func throwConfetti(duration: Double) {
+        ConfettiPanel.celebrate(duration: duration)
+        GuestParade.show(host: brain, duration: duration)
     }
 
     /// 吹气检测:拿不到麦克风权限时安静降级,点蛋糕也能吹灭
@@ -226,7 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func celebrate() {
-        ConfettiPanel.celebrate(duration: 7)
+        throwConfetti(duration: 7)
     }
 
     @objc private func resetPosition() {

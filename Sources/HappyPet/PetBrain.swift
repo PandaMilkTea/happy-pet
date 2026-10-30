@@ -87,6 +87,9 @@ final class PetBrain: ObservableObject {
     @Published private(set) var role: PetRole
     /// 当前角色的素材
     private(set) var roleAssets: RoleAssets
+    /// 嘉宾模式:撒花时临时出场的其他角色。只站着鼓掌,不走动 / 不睡觉 / 不举牌,
+    /// 也不会把角色选择写回 UserDefaults(不能污染用户自己挑的主角)。
+    let isGuest: Bool
 
     /// 兼容旧调用:眼睛快闭上时视为眨眼
     var isBlinking: Bool { pose.eyeOpen < 0.45 }
@@ -189,15 +192,19 @@ final class PetBrain: ObservableObject {
     private var pokeStreakDeadline: Double = 0
     private var lastPhraseIndex: Int = -1
 
-    init() {
+    /// - Parameter guestRole: 传 nil 就是主角(读用户上次选的角色);传角色名则是撒花嘉宾。
+    init(guestRole: PetRole? = nil) {
         let shared = PetAssets.shared
-        let initial = PetRole.stored(default: shared.defaultRole)
+        let initial = guestRole ?? PetRole.stored(default: shared.defaultRole)
+        isGuest = guestRole != nil
         role = initial
         let bundle = shared.assets(for: initial)
         roleAssets = bundle
         sprites = SpriteAnimator(frames: bundle.frames, walkPixelsPerFrame: initial.pixelsPerWalkFrame)
-        weights[PetState.idle.rawValue] = 1
-        sprites.play(PetState.idle.spriteAction)
+        let opening: PetState = isGuest ? .happy : .idle
+        state = opening
+        weights[opening.rawValue] = 1
+        sprites.play(opening.spriteAction)
     }
 
     // MARK: - 角色切换
@@ -236,6 +243,12 @@ final class PetBrain: ObservableObject {
         t.tolerance = 0
         RunLoop.main.add(t, forMode: .common)
         timer = t
+
+        // 嘉宾只负责开心,生日流程 / 纪念日气泡都归主角
+        if isGuest {
+            switchTo(.happy, duration: .infinity)
+            return
+        }
 
         if config.isBirthdayToday {
             enterBirthdayMode()
@@ -452,7 +465,7 @@ final class PetBrain: ObservableObject {
             bubbleRemaining -= dt
             if bubbleRemaining <= 0 { bubbleText = nil }
         }
-        guard !isHoldingCake, signText == nil else { return }
+        guard !isGuest, !isHoldingCake, signText == nil else { return }
         signCountdown -= dt
         if signCountdown <= 0, state != .drag, state != .fall {
             showSign()
@@ -605,6 +618,13 @@ final class PetBrain: ObservableObject {
     // MARK: - 状态切换
 
     private func decideNextState() {
+        // 嘉宾一直开心到退场,不走神
+        if isGuest {
+            if state != .happy { switchTo(.happy, duration: .infinity) }
+            stateElapsed = 0
+            stateDuration = .infinity
+            return
+        }
         // 捧着蛋糕时站定不动,等着被吹
         if isHoldingCake {
             if state != .happy { switchTo(.cake, duration: .infinity) }
