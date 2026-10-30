@@ -4,8 +4,8 @@ import Foundation
 ///
 /// 同一件事由谁说出来口吻完全不同:大明撒娇、凯文嘴硬、锅巴高冷、大和热情。
 /// 句库都可以用 Assets 里的 txt 覆盖,改词不用重新编译:
-/// - `love_<角色>.txt`  举牌情话(没有就用内置 + 通用 love.txt)
-/// - `purr_<角色>.txt`  摸头时的咕噜话
+/// - `love_<角色>.txt`  举牌情话(会和通用 love.txt 合在一起抽)
+/// - `purr_<角色>.txt`  摸头时的咕噜话(有就完全覆盖内置)
 ///
 /// 这里只放纯逻辑,目录由调用方(PetAssets)传进来,避免和素材仓库互相依赖。
 enum RoleVoice {
@@ -15,13 +15,14 @@ enum RoleVoice {
 
     // MARK: - 举牌情话
 
-    /// 角色专属文件优先;否则「通用 love.txt + 该角色内置台词」合在一起,
-    /// 这样用户手写的情话不会因为分角色而失效。
+    /// 角色专属 + 通用 love.txt 合在一起去重(专属的排前面),
+    /// 这样既有角色味道,用户手写在 love.txt 里的句子也不会失效。
+    /// 两个文件都没有时才退回该角色的内置句库。
     static func lovePhrases(for role: PetRole, in root: URL?) -> [String] {
-        if let own = load("love_\(role.rawValue).txt", in: root) { return own }
+        let own = load("love_\(role.rawValue).txt", in: root) ?? []
         let shared = load("love.txt", in: root) ?? []
-        let merged = shared + builtinLove(role)
-        return merged.isEmpty ? builtinLove(role) : dedup(merged)
+        let merged = dedup(own + shared)
+        return merged.isEmpty ? builtinLove(role) : merged
     }
 
     // MARK: - 摸头
