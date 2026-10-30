@@ -66,7 +66,7 @@ struct PetView: View {
     // MARK: - 地面阴影
 
     private var groundShadow: some View {
-        let baseWidth: CGFloat = hasCharacter ? 54 : 76
+        let baseWidth: CGFloat = hasCharacter ? (brain.role.isHuman ? 54 : 84) : 76
         return Ellipse()
             .fill(Color.black.opacity(pose.shadowOpacity))
             .frame(width: baseWidth * pose.shadowScale, height: (hasCharacter ? 10 : 13) * pose.shadowScale)
@@ -76,18 +76,22 @@ struct PetView: View {
 
     // MARK: - 本体:有立绘就用立绘,否则用内置橘猫
 
-    private var hasCharacter: Bool { brain.assets.hasCharacter }
+    private var hasCharacter: Bool { brain.roleAssets.hasAnything }
+    /// 当前角色的显示高度(pt),猫狗比人矮一截
+    private var displayHeight: CGFloat { brain.role.displayHeight }
+    /// 脚底在 avatar 容器里的 y 偏移:所有角色共用同一条地面线
+    private static let feetLine: CGFloat = 68.5
 
     @ViewBuilder
     private var avatar: some View {
         if hasCharacter { characterBody } else { catBody }
     }
 
-    /// 图片素材驱动的人物。
-    /// 优先播帧动画(Assets 里的 girl_<动作>_<序号>.png);
+    /// 图片素材驱动的角色。
+    /// 优先播帧动画(Assets 里的 `<角色>_<动作>_<序号>.png`);
     /// 没有帧素材时退回单张立绘:有「闭眼整帧」就整图切换,否则叠眼睛图层。
     private var characterBody: some View {
-        let assets = brain.assets
+        let assets = brain.roleAssets
         let sprites = brain.sprites
         return ZStack(alignment: .bottom) {
             if let frame = sprites.current {
@@ -109,27 +113,24 @@ struct PetView: View {
                 armLayer
             }
         }
-        .frame(width: 74, height: 185, alignment: .bottom)
-        .offset(y: -24)
+        .frame(width: brain.role.displayWidth, height: displayHeight, alignment: .bottom)
+        .offset(y: Self.feetLine - displayHeight / 2)
         .scaleEffect(x: spriteSquash.width, y: spriteSquash.height, anchor: .bottom)
         .scaleEffect(x: pose.facing, y: 1, anchor: .center)
     }
 
     @ViewBuilder
     private var armLayer: some View {
-        if let arm = brain.assets.armRight {
+        if let arm = brain.roleAssets.armRight {
             layer(arm)
                 .rotationEffect(.degrees(armAngle), anchor: .top)
         }
     }
 
-    /// 素材的统一像素尺度:抠图脚本保证所有帧和立绘用同一比例,
+    /// 素材的统一像素尺度:抠图脚本保证同一角色的所有帧和立绘用同一比例,
     /// 只是画布大小会因为甩手/跳起而变宽变高。
-    /// 所以这里按「自身像素高 ÷ 立绘像素高 × 容器高」算显示尺寸,
+    /// 所以这里按「自身像素高 ÷ 角色基准像素高 × 角色显示高度」算显示尺寸,
     /// 用 aspectRatio(.fit) 的话宽画布会被挤小,人物就一帧一个大小了。
-    private static let bodyHeight: CGFloat = 185
-    private static let bodyWidth: CGFloat = 74
-
     private func pixelSize(_ image: NSImage) -> CGSize {
         if let rep = image.representations.first, rep.pixelsHigh > 0 {
             return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
@@ -138,11 +139,13 @@ struct PetView: View {
     }
 
     private func layer(_ image: NSImage) -> some View {
-        let unit = brain.assets.body.map { pixelSize($0).height } ?? pixelSize(image).height
+        let unit = brain.roleAssets.pixelUnit > 1
+            ? brain.roleAssets.pixelUnit
+            : pixelSize(image).height
         let px = pixelSize(image)
-        let scale = unit > 1 ? Self.bodyHeight / unit : 0
-        let h = scale > 0 ? px.height * scale : Self.bodyHeight
-        let w = px.height > 1 ? h * px.width / px.height : Self.bodyWidth
+        let scale = unit > 1 ? displayHeight / unit : 0
+        let h = scale > 0 ? px.height * scale : displayHeight
+        let w = px.height > 1 ? h * px.width / px.height : brain.role.displayWidth
         return Image(nsImage: image)
             .resizable()
             .interpolation(.high)
@@ -157,20 +160,23 @@ struct PetView: View {
     @ViewBuilder
     private var cakeLayer: some View {
         if brain.isHoldingCake {
+            // 蛋糕端在身体中段:脚底线往上挪半个身高多一点,矮个子角色才不会把蛋糕举到天上
+            let cakeY: CGFloat = hasCharacter ? (Self.feetLine - displayHeight * 0.48) : 26
             CakeView(lit: brain.candleLit, clock: t)
-                .scaleEffect(0.92)
+                .scaleEffect(hasCharacter && !brain.role.isHuman ? 0.7 : 0.92)
                 .offset(x: brain.facingRight ? 6 : -6,
-                        y: (hasCharacter ? -20 : 26) + bob + jump * 0.4)
+                        y: cakeY + bob + jump * 0.4)
         }
     }
 
     @ViewBuilder
     private var overlayLayer: some View {
-        // 立绘是全身比例,头顶比橘猫高不少,牌子和气泡要相应抬高
+        // 牌子和气泡都钉在头顶上方:头顶 = 地面线 - 角色显示高度
         let hasSign = brain.signText != nil
-        let signY: CGFloat = hasCharacter ? -62 : -6
+        let headTop: CGFloat = bodyDrop + Self.feetLine - displayHeight
+        let signY: CGFloat = hasCharacter ? headTop - 15 : -6
         let bubbleY: CGFloat = hasCharacter
-            ? (hasSign ? -100 : -48)
+            ? (hasSign ? headTop - 53 : headTop - 2)
             : (hasSign ? -52 : -18)
 
         if let sign = brain.signText {

@@ -59,11 +59,17 @@ final class PetContainerView: NSView {
     /// 只有宠物身体范围内才接收鼠标事件,其余区域点击穿透到桌面
     override func hitTest(_ point: NSPoint) -> NSView? {
         let p = superview.map { convert(point, from: $0) } ?? point
-        let hasCharacter = PetAssets.shared.hasCharacter
-        // 本体在 300 高的窗口里靠下站立,上方留给举牌 / 气泡
-        let center = CGPoint(x: bounds.midX, y: bounds.midY - (hasCharacter ? 56 : 70))
-        let rx: CGFloat = hasCharacter ? 42 : 58
-        let ry: CGFloat = hasCharacter ? 85 : 54
+        let hasCharacter = brain.roleAssets.hasAnything
+        let role = brain.role
+        // 本体在 300 高的窗口里靠下站立(脚底固定在中线下方 138pt),上方留给举牌 / 气泡
+        let feet = bounds.midY - 138.5
+        let h = role.displayHeight
+        let center = hasCharacter
+            ? CGPoint(x: bounds.midX, y: feet + h / 2)
+            : CGPoint(x: bounds.midX, y: bounds.midY - 70)
+        // 四足角色矮而宽,命中区得按身高横向放大,不然很难点到
+        let rx: CGFloat = hasCharacter ? (role.isHuman ? h * 0.23 : h * 0.6) : 58
+        let ry: CGFloat = hasCharacter ? h * 0.48 : 54
         let dx = (p.x - center.x) / rx
         let dy = (p.y - center.y) / ry
         if (dx * dx + dy * dy) <= 1 { return self }
@@ -71,7 +77,7 @@ final class PetContainerView: NSView {
         // 捧着蛋糕时,蛋糕也要能点(等于吹蜡烛的兜底)
         if brain.isHoldingCake {
             let cakeCenter = CGPoint(x: bounds.midX + (brain.facingRight ? 6 : -6),
-                                     y: bounds.midY - (hasCharacter ? 50 : 96))
+                                     y: hasCharacter ? (feet + h * 0.48) : (bounds.midY - 96))
             let cdx = (p.x - cakeCenter.x) / 34
             let cdy = (p.y - cakeCenter.y) / 32
             if (cdx * cdx + cdy * cdy) <= 1 { return self }

@@ -62,7 +62,7 @@ final class SpriteAnimator {
         "happy": ["poke", "idle"],
         "poke": ["happy", "idle"],
         "sign": ["happy", "idle"],
-        "cake": ["sign", "idle"],
+        "cake": ["sign", "happy", "idle"],
         "drag": ["fall", "idle"],
         "fall": ["drag", "idle"],
         "sleep": ["idle"],
@@ -83,13 +83,17 @@ final class SpriteAnimator {
     /// 是否有任何帧素材。没有就让渲染层走老的静态立绘逻辑。
     var isEmpty: Bool { clips.isEmpty }
 
-    init(frames: [String: [NSImage]]) {
+    init(frames: [String: [NSImage]], walkPixelsPerFrame: Double? = nil) {
         var built: [String: SpriteClip] = [:]
         for (name, images) in frames where !images.isEmpty {
             var clip = SpriteAnimator.presets[name]
                 ?? SpriteClip(frames: [], fps: 6, pixelsPerFrame: nil, loops: true, crossfade: true)
             clip.frames = images
             clip.crossfade = clip.crossfade && images.count > 1
+            // 不同角色腿长不同,走路帧的步幅要跟着换,否则四足动物会滑步
+            if name == "walk", let ppf = walkPixelsPerFrame, ppf > 0 {
+                clip.pixelsPerFrame = ppf
+            }
             built[name] = clip
         }
         clips = built

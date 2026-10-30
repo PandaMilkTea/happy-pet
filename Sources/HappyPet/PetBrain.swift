@@ -82,7 +82,11 @@ final class PetBrain: ObservableObject {
     /// 本帧姿态。不是 @Published —— clock 每帧都变,视图重绘时自然读到最新值。
     private(set) var pose = PetPose()
     /// 帧动画播放器(没有帧素材时内部为空,渲染层回退静态立绘)
-    let sprites: SpriteAnimator
+    private(set) var sprites: SpriteAnimator
+    /// 当前出场角色
+    @Published private(set) var role: PetRole
+    /// 当前角色的素材
+    private(set) var roleAssets: RoleAssets
 
     /// 兼容旧调用:眼睛快闭上时视为眨眼
     var isBlinking: Bool { pose.eyeOpen < 0.45 }
@@ -120,7 +124,7 @@ final class PetBrain: ObservableObject {
     /// 起步 / 停步的加速度(像素/秒²)。匀速突变是「生硬」的主要来源之一。
     private let acceleration: Double = 320
     /// 迈一步的距离,决定颠簸和迈腿的节奏(和 walk 帧动画的步幅对齐:小碎步 ~24px)
-    private let strideLength: Double = 24
+    private var strideLength: Double { role.isHuman ? 24 : 18 }
     /// 状态权重过渡时长
     private let blendTime: Double = 0.18
     /// 转身时长
@@ -186,9 +190,38 @@ final class PetBrain: ObservableObject {
     private var lastPhraseIndex: Int = -1
 
     init() {
-        sprites = SpriteAnimator(frames: assets.frames)
+        let shared = PetAssets.shared
+        let initial = PetRole.stored(default: shared.defaultRole)
+        role = initial
+        let bundle = shared.assets(for: initial)
+        roleAssets = bundle
+        sprites = SpriteAnimator(frames: bundle.frames, walkPixelsPerFrame: initial.pixelsPerWalkFrame)
         weights[PetState.idle.rawValue] = 1
         sprites.play(PetState.idle.spriteAction)
+    }
+
+    // MARK: - 角色切换
+
+    /// 换一个角色出场。素材整组替换,状态回到待机,位置保持不动。
+    func switchRole(to next: PetRole) {
+        guard next != role else { return }
+        role = next
+        PetRole.store(next)
+        let bundle = assets.assets(for: next)
+        roleAssets = bundle
+        sprites = SpriteAnimator(frames: bundle.frames, walkPixelsPerFrame: next.pixelsPerWalkFrame)
+
+        // 人形专属的举牌 / 蛋糕在猫狗身上没有素材,切过去时一并收掉
+        if !next.isHuman {
+            signText = nil
+            isHoldingCake = false
+        }
+        signRemaining = 0
+        bubbleText = nil
+        bubbleRemaining = 0
+        switchTo(.idle, duration: 2.5)
+        sprites.play(PetState.idle.spriteAction, restart: true)
+        showBubble("\(next.menuTitle(nickname: config.nickname))来啦", duration: 3)
     }
 
     // MARK: - 生命周期

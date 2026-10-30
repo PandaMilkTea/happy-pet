@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panel: PetPanel?
     private var statusItem: NSStatusItem?
     private var followItem: NSMenuItem?
+    private var roleItems: [NSMenuItem] = []
 
     private let breath = BreathDetector()
     private var player: AVAudioPlayer?
@@ -120,6 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         addItem(to: menu, title: "睡一会儿 / 醒来", action: #selector(toggleSleep))
 
+        if brain.assets.availableRoles.count > 1 {
+            menu.addItem(.separator())
+            menu.addItem(roleMenuItem())
+        }
+
         menu.addItem(.separator())
 
         addItem(to: menu, title: "说句情话", action: #selector(showLovePhrase))
@@ -151,8 +157,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item)
     }
 
+    /// 「换个角色」子菜单。只列出 Assets 里真的有素材的角色,当前角色打勾。
+    private func roleMenuItem() -> NSMenuItem {
+        let parent = NSMenuItem(title: "换个角色", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        var items: [NSMenuItem] = []
+        for role in brain.assets.availableRoles {
+            let item = NSMenuItem(title: role.menuTitle(nickname: config.nickname),
+                                  action: #selector(pickRole(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = role.rawValue
+            item.state = role == brain.role ? .on : .off
+            sub.addItem(item)
+            items.append(item)
+        }
+        parent.submenu = sub
+        roleItems = items
+        return parent
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         followItem?.state = brain.followMouse ? .on : .off
+        for item in roleItems {
+            guard let raw = item.representedObject as? String else { continue }
+            item.state = raw == brain.role.rawValue ? .on : .off
+        }
     }
 
     // MARK: - Actions
@@ -168,6 +198,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleSleep() {
         brain.toggleSleep()
+    }
+
+    @objc private func pickRole(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let role = PetRole(rawValue: raw)
+        else { return }
+        brain.switchRole(to: role)
     }
 
     @objc private func showLovePhrase() {
