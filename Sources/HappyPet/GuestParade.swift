@@ -11,6 +11,8 @@ enum GuestParade {
     private static var brains: [PetBrain] = []
     private static var panels: [PetPanel] = []
     private static var dismissWork: DispatchWorkItem?
+    /// 主角角色。嘉宾散场后只保留它的素材缓存,其余的放掉。
+    private static var hostRole: PetRole?
 
     /// 嘉宾出场时随机挑一句头顶气泡
     private static let cheers = ["一起庆祝", "今天是你的日子", "耶!", "撒花撒花", "happy~"]
@@ -23,6 +25,10 @@ enum GuestParade {
 
         let guests = host.assets.availableRoles.filter { $0 != host.role }
         guard !guests.isEmpty else { return }
+
+        hostRole = host.role
+        // 第一个嘉宾马上就要登场,后面的有 0.22s 一个的间隔,先让后台把帧解出来
+        host.assets.prewarm(Array(guests.dropFirst()))
 
         let screen = host.window?.screen ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
@@ -87,6 +93,12 @@ enum GuestParade {
             } completionHandler: {
                 panel.orderOut(nil)
             }
+        }
+
+        // 嘉宾的帧图不用再留着占内存了
+        if let keep = hostRole {
+            hostRole = nil
+            PetAssets.shared.releaseRoles(keeping: keep)
         }
     }
 }

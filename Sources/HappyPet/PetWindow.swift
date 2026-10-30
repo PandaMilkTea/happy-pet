@@ -4,6 +4,9 @@ import SwiftUI
 /// 承载宠物的无边框透明悬浮窗
 final class PetPanel: NSPanel {
 
+    /// 主角窗(非嘉宾),供其它面板定位到桌宠所在那块屏
+    private(set) static weak var host: PetPanel?
+
     /// - Parameter interactive: false 时完全点击穿透(撒花嘉宾用,不该抢主角的点击)
     init(brain: PetBrain, interactive: Bool = true) {
         let size = brain.windowSize
@@ -35,6 +38,7 @@ final class PetPanel: NSPanel {
         container.addSubview(host)
 
         contentView = container
+        if interactive { PetPanel.host = self }
     }
 
     override var canBecomeKey: Bool { false }

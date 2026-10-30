@@ -234,8 +234,6 @@ final class PetBrain: ObservableObject {
         state = opening
         weights[opening.rawValue] = 1
         sprites.play(opening.spriteAction)
-        // 启动只解码当前角色的帧,其余角色后台慢慢预热:切角色 / 串门时不卡,启动也不用等
-        if !isGuest { shared.prewarmRoles(excluding: initial) }
     }
 
     // MARK: - 角色切换

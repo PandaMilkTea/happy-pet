@@ -149,7 +149,7 @@ final class GiftStore {
 
     /// 读 Assets/coupons.txt,`#` 开头算注释
     private static func readCouponFile() -> [String]? {
-        guard let root = couponsDirectory() else { return nil }
+        guard let root = PetAssets.shared.assetsRoot else { return nil }
         let url = root.appendingPathComponent("coupons.txt")
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let lines = text
@@ -157,13 +157,6 @@ final class GiftStore {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
         return lines.isEmpty ? nil : lines
-    }
-
-    private static func couponsDirectory() -> URL? {
-        if let override = ProcessInfo.processInfo.environment["HAPPYPET_ASSETS"] {
-            return URL(fileURLWithPath: override, isDirectory: true)
-        }
-        return Bundle.main.resourceURL?.appendingPathComponent("Assets", isDirectory: true)
     }
 
     private static let defaultCoupons = [

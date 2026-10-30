@@ -22,12 +22,17 @@ class CenteredPanel: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         animationBehavior = .none
-        center()
-        if let screen = NSScreen.main {
-            let f = screen.visibleFrame
-            setFrameOrigin(NSPoint(x: f.midX - size.width / 2,
-                                   y: f.midY - size.height / 2))
+        if let frame = CenteredPanel.hostScreen()?.visibleFrame {
+            setFrameOrigin(NSPoint(x: frame.midX - size.width / 2,
+                                   y: frame.midY - size.height / 2))
+        } else {
+            center()
         }
+    }
+
+    /// 桌宠所在那块屏(多显示器时跟着主角走),拿不到就退回主屏
+    static func hostScreen() -> NSScreen? {
+        PetPanel.host?.screen ?? NSScreen.main ?? NSScreen.screens.first
     }
 
     override var canBecomeKey: Bool { true }

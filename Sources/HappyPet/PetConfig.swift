@@ -330,6 +330,13 @@ final class PetAssets {
     private var roleCache: [PetRole: RoleAssets] = [:]
     private var photoCache: [NSImage]?
 
+    /// 最近用过的角色,队尾最新。LRU 淘汰就看这个顺序。
+    private var recentRoles: [PetRole] = []
+    ///同时留在缓存里的角色上限:当前角色 + 上一个。
+    /// 一个角色的帧解码后是几十 MB 的位图,把 4 个角色全留着没必要。
+    /// 注意被逐出只是不再缓存,正在用的 RoleAssets 还被 PetBrain 强引用着,不会失效。
+    private let roleCacheLimit = 2
+
     /// 菜单里可选的角色,按 PetRole.allCases 的顺序
     var availableRoles: [PetRole] { rolesWithAssets }
 
@@ -351,22 +358,53 @@ final class PetAssets {
         return loaded
     }
 
-    /// 按需取角色素材:只解码这一个角色的帧,解完缓存住。
+    /// 按需取角色素材:只解码这一个角色的帧,解完缓存住(LRU,只留最近两个)。
     func assets(for role: PetRole) -> RoleAssets {
         lock.lock()
         defer { lock.unlock() }
-        if let cached = roleCache[role] { return cached }
+        if let cached = roleCache[role] {
+            touch(role)
+            return cached
+        }
         let built = PetAssets.loadRole(role, names: fileNames, in: assetsRoot)
         roleCache[role] = built
+        touch(role)
+        trimCache()
         return built
     }
 
-    /// 后台预热其余角色。切角色 / 串门时就不会卡在解码上,但启动不用等。
-    func prewarmRoles(excluding current: PetRole) {
-        let pending = rolesWithAssets.filter { $0 != current }
+    /// 后台预热指定角色。想提前把解码挪出主线程时用(例如撒花前的嘉宾巡游)。
+    func prewarm(_ roles: [PetRole]) {
+        let pending = roles.filter { role in
+            lock.lock()
+            defer { lock.unlock() }
+            return roleCache[role] == nil
+        }
         guard !pending.isEmpty else { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             for role in pending { _ = self?.assets(for: role) }
+        }
+    }
+
+    /// 嘉宾散场后把它们的素材从缓存里放掉,只留主角这一份。
+    func releaseRoles(keeping keep: PetRole) {
+        lock.lock()
+        defer { lock.unlock() }
+        roleCache = roleCache.filter { $0.key == keep }
+        recentRoles = recentRoles.filter { $0 == keep }
+    }
+
+    /// 标记成最近使用。调用方已持锁。
+    private func touch(_ role: PetRole) {
+        recentRoles.removeAll { $0 == role }
+        recentRoles.append(role)
+    }
+
+    /// 超出上限就从最久没用的开始丢。调用方已持锁。
+    private func trimCache() {
+        while recentRoles.count > roleCacheLimit {
+            let dropped = recentRoles.removeFirst()
+            roleCache.removeValue(forKey: dropped)
         }
     }
 
