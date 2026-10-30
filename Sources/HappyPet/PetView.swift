@@ -42,7 +42,7 @@ struct PetView: View {
     // MARK: - body
 
     /// 宠物本体在窗口里的下移量:上方留给举牌和气泡
-    private let bodyDrop: CGFloat = 70
+    private let bodyDrop = PetGeometry.bodyDrop
 
     var body: some View {
         ZStack {
@@ -50,17 +50,17 @@ struct PetView: View {
                 groundShadow
                 avatar
                     .rotationEffect(.degrees(tilt), anchor: .bottom)
-                    .offset(x: pose.sway, y: 10 + bob + jump)
+                    .offset(x: pose.sway, y: PetGeometry.avatarNudge + bob + jump)
                 cakeLayer
                 foodLayer
                 effects
             }
-            .frame(width: 160, height: 160)
+            .frame(width: PetGeometry.bodyBoxSide, height: PetGeometry.bodyBoxSide)
             .offset(y: bodyDrop)
 
             overlayLayer
         }
-        .frame(width: 200, height: 300)
+        .frame(width: PetGeometry.windowSize.width, height: PetGeometry.windowSize.height)
         .allowsHitTesting(false)
     }
 
@@ -81,7 +81,7 @@ struct PetView: View {
     /// 当前角色的显示高度(pt),猫狗比人矮一截
     private var displayHeight: CGFloat { brain.role.displayHeight }
     /// 脚底在 avatar 容器里的 y 偏移:所有角色共用同一条地面线
-    private static let feetLine: CGFloat = 68.5
+    private static let feetLine = PetGeometry.feetInBodyBox
 
     @ViewBuilder
     private var avatar: some View {
@@ -162,10 +162,10 @@ struct PetView: View {
     private var cakeLayer: some View {
         if brain.isHoldingCake {
             // 蛋糕端在身体中段:脚底线往上挪半个身高多一点,矮个子角色才不会把蛋糕举到天上
-            let cakeY: CGFloat = hasCharacter ? (Self.feetLine - displayHeight * 0.48) : 26
+            let cakeY: CGFloat = hasCharacter ? (Self.feetLine - displayHeight * PetGeometry.cakeHeightRatio) : 26
             CakeView(lit: brain.candleLit, clock: t)
                 .scaleEffect(hasCharacter && !brain.role.isHuman ? 0.7 : 0.92)
-                .offset(x: brain.facingRight ? 6 : -6,
+                .offset(x: brain.facingRight ? PetGeometry.cakeOffsetX : -PetGeometry.cakeOffsetX,
                         y: cakeY + bob + jump * 0.4)
         }
     }
@@ -177,7 +177,7 @@ struct PetView: View {
             // 三口吃完,所以尺寸按 1 / 2/3 / 1/3 台阶往下掉,看着像被咬掉
             let step = min(2, Int(brain.eatProgress * 3))
             let shrink = CGFloat(1 - Double(step) * 0.3)
-            let mouthY: CGFloat = hasCharacter ? (Self.feetLine - displayHeight * 0.78) : 4
+            let mouthY: CGFloat = hasCharacter ? (Self.feetLine - displayHeight * PetGeometry.mouthHeightRatio) : 4
             let chew = CGFloat(sin(t * 11) * 1.6)
             FoodIconView(item: food, size: 34 * shrink)
                 .rotationEffect(.degrees(brain.facingRight ? -12 : 12))
@@ -191,7 +191,7 @@ struct PetView: View {
     private var overlayLayer: some View {
         // 牌子和气泡都钉在头顶上方:头顶 = 地面线 - 角色显示高度
         let hasSign = brain.signText != nil
-        let headTop: CGFloat = bodyDrop + Self.feetLine - displayHeight
+        let headTop = PetGeometry.headTopBelowCenter(height: displayHeight)
         let signY: CGFloat = hasCharacter ? headTop - 15 : -6
         let bubbleY: CGFloat = hasCharacter
             ? (hasSign ? headTop - 53 : headTop - 2)

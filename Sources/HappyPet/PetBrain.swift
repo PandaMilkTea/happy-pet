@@ -134,7 +134,7 @@ final class PetBrain: ObservableObject {
 
     // MARK: - 可调参数
     /// 窗口比宠物本体大一圈,上方留给举牌 / 气泡,下方留给蛋糕
-    let windowSize = CGSize(width: 200, height: 300)
+    let windowSize = PetGeometry.windowSize
     private let walkSpeed: Double = 38        // 像素/秒(走路帧按实际位移推进,调慢这里步频也跟着慢,不会滑步)
     private let followSpeed: Double = 150
     private let gravity: Double = 1500
@@ -234,6 +234,8 @@ final class PetBrain: ObservableObject {
         state = opening
         weights[opening.rawValue] = 1
         sprites.play(opening.spriteAction)
+        // 启动只解码当前角色的帧,其余角色后台慢慢预热:切角色 / 串门时不卡,启动也不用等
+        if !isGuest { shared.prewarmRoles(excluding: initial) }
     }
 
     // MARK: - 角色切换
@@ -408,19 +410,11 @@ final class PetBrain: ObservableObject {
     /// 屏幕坐标是否落在宠物身上。给投喂做命中判定,比点击命中区放宽一圈,拖过去更好对准。
     func bodyContains(_ screenPoint: NSPoint) -> Bool {
         guard let window else { return false }
-        let f = window.frame
-        let hasCharacter = roleAssets.hasAnything
-        let h = role.displayHeight
-        // 和 PetContainerView.hitTest 用同一套几何:脚底固定在窗口中线下方 138.5pt
-        let feet = f.midY - 138.5
-        let center = hasCharacter
-            ? CGPoint(x: f.midX, y: feet + h / 2)
-            : CGPoint(x: f.midX, y: f.midY - 70)
-        let rx = (hasCharacter ? (role.isHuman ? h * 0.23 : h * 0.6) : 58) + 30
-        let ry = (hasCharacter ? h * 0.48 : 54) + 30
-        let dx = (screenPoint.x - center.x) / rx
-        let dy = (screenPoint.y - center.y) / ry
-        return (dx * dx + dy * dy) <= 1
+        return PetGeometry.bodyContains(screenPoint,
+                                        in: window.frame,
+                                        role: role,
+                                        hasCharacter: roleAssets.hasAnything,
+                                        padding: 30)
     }
 
     /// 投喂:拖一样食物到身上

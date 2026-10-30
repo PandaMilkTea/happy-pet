@@ -315,39 +315,76 @@ final class PetAssets {
     static let shared = PetAssets()
 
     let config: PetConfig
-    /// 各角色的素材,只收录真的有图的角色
-    let roles: [PetRole: RoleAssets]
-    let photos: [NSImage]
     let birthdaySound: URL?
     let lovePhrases: [String]
     /// Assets 目录本身,给需要按需扫子目录的模块用(食物图标等)
     let assetsRoot: URL?
 
+    /// Assets 根目录的文件名清单。只列一次目录,之后谁要素材谁按需解码。
+    private let fileNames: [String]
+    /// 真的有素材的角色。只看文件名不解码图片,所以启动时几乎零成本。
+    private let rolesWithAssets: [PetRole]
+
+    /// 解码过的角色素材缓存。预热在后台线程跑,所以加锁。
+    private let lock = NSLock()
+    private var roleCache: [PetRole: RoleAssets] = [:]
+    private var photoCache: [NSImage]?
+
     /// 菜单里可选的角色,按 PetRole.allCases 的顺序
-    var availableRoles: [PetRole] { PetRole.allCases.filter { roles[$0] != nil } }
+    var availableRoles: [PetRole] { rolesWithAssets }
 
     /// 配置里指定的首发角色;没素材时退到第一个有素材的角色
     var defaultRole: PetRole {
-        if let raw = config.defaultRole, let role = PetRole(rawValue: raw), roles[role] != nil {
+        if let raw = config.defaultRole, let role = PetRole(rawValue: raw), rolesWithAssets.contains(role) {
             return role
         }
-        return availableRoles.first ?? .girl
+        return rolesWithAssets.first ?? .girl
     }
 
+    /// 合影照片:第一次真的要用(翻相册 / 拆礼物)时才解码,启动时不碰。
+    var photos: [NSImage] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = photoCache { return cached }
+        let loaded = PetAssets.loadPhotos(in: assetsRoot)
+        photoCache = loaded
+        return loaded
+    }
+
+    /// 按需取角色素材:只解码这一个角色的帧,解完缓存住。
     func assets(for role: PetRole) -> RoleAssets {
-        roles[role] ?? RoleAssets(role: role, body: nil, blinkBody: nil, eyesOpen: nil,
-                                  eyesClosed: nil, armRight: nil, frames: [:])
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = roleCache[role] { return cached }
+        let built = PetAssets.loadRole(role, names: fileNames, in: assetsRoot)
+        roleCache[role] = built
+        return built
+    }
+
+    /// 后台预热其余角色。切角色 / 串门时就不会卡在解码上,但启动不用等。
+    func prewarmRoles(excluding current: PetRole) {
+        let pending = rolesWithAssets.filter { $0 != current }
+        guard !pending.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            for role in pending { _ = self?.assets(for: role) }
+        }
     }
 
     private init() {
         let root = PetAssets.assetsURL()
         assetsRoot = root
+        fileNames = root.flatMap { try? FileManager.default.contentsOfDirectory(atPath: $0.path) } ?? []
 
         config = PetAssets.loadConfig(in: root)
-        roles = PetAssets.loadRoles(in: root)
-        photos = PetAssets.loadPhotos(in: root)
+        rolesWithAssets = PetAssets.detectRoles(names: fileNames)
         birthdaySound = PetAssets.loadSound(in: root)
         lovePhrases = PetAssets.loadPhrases(in: root)
+
+        if rolesWithAssets.isEmpty {
+            print("🎭 没扫到任何角色素材,回退内置橘猫")
+        } else {
+            print("🎭 可选角色: \(rolesWithAssets.map(\.rawValue).joined(separator: " "))")
+        }
     }
 
     // MARK: 路径解析
@@ -379,35 +416,50 @@ final class PetAssets {
         return nil
     }
 
-    /// 扫描 Assets 目录,把 `<角色>_<动作>_<序号>.png` 按角色分桶、再按动作分组。
-    /// 静态立绘(girl_body / cat_body_blink / dog_eyes_open …)没有数字后缀,走单独加载。
-    private static func loadRoles(in root: URL?) -> [PetRole: RoleAssets] {
-        guard let root else { return [:] }
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-
-        var result: [PetRole: RoleAssets] = [:]
-        for role in PetRole.allCases {
-            let frames = loadFrames(role: role, names: names, in: root)
-            let assets = RoleAssets(
-                role: role,
-                body: loadImage("\(role.rawValue)_body", in: root),
-                blinkBody: loadImage("\(role.rawValue)_body_blink", in: root),
-                eyesOpen: loadImage("\(role.rawValue)_eyes_open", in: root),
-                eyesClosed: loadImage("\(role.rawValue)_eyes_closed", in: root),
-                armRight: loadImage("\(role.rawValue)_arm_r", in: root),
-                frames: frames
-            )
-            guard assets.hasAnything else { continue }
-            result[role] = assets
-
-            let summary = frames
-                .map { "\($0.key)×\($0.value.count)" }
-                .sorted()
-                .joined(separator: " ")
-            print("🎭 \(role.rawValue) 素材: \(summary.isEmpty ? "仅静态立绘" : summary)")
+    /// 光看文件名就能判断哪些角色有素材(和 `RoleAssets.hasAnything` 同一套口径:
+    /// 有 `<角色>_body.png` 或任意一张帧图就算有)。不解码图片,所以启动时几乎不花时间。
+    private static func detectRoles(names: [String]) -> [PetRole] {
+        let stems = Set(names
+            .filter { ["png", "PNG"].contains(($0 as NSString).pathExtension) }
+            .map { ($0 as NSString).deletingPathExtension })
+        return PetRole.allCases.filter { role in
+            let prefix = "\(role.rawValue)_"
+            if stems.contains("\(prefix)body") { return true }
+            return stems.contains { stem in
+                guard stem.hasPrefix(prefix) else { return false }
+                let parts = stem.dropFirst(prefix.count).split(separator: "_")
+                return parts.count >= 2 && Int(parts[parts.count - 1]) != nil
+            }
         }
-        if result.isEmpty { print("🎭 没扫到任何角色素材,回退内置橘猫") }
-        return result
+    }
+
+    /// 解码单个角色的素材。
+    /// 帧动画来自 `<角色>_<动作>_<序号>.png`;静态立绘(girl_body / cat_body_blink / dog_eyes_open …)
+    /// 没有数字后缀,走单独加载。
+    private static func loadRole(_ role: PetRole, names: [String], in root: URL?) -> RoleAssets {
+        guard let root else {
+            return RoleAssets(role: role, body: nil, blinkBody: nil, eyesOpen: nil,
+                              eyesClosed: nil, armRight: nil, frames: [:])
+        }
+        let started = Date()
+        let frames = loadFrames(role: role, names: names, in: root)
+        let assets = RoleAssets(
+            role: role,
+            body: loadImage("\(role.rawValue)_body", in: root),
+            blinkBody: loadImage("\(role.rawValue)_body_blink", in: root),
+            eyesOpen: loadImage("\(role.rawValue)_eyes_open", in: root),
+            eyesClosed: loadImage("\(role.rawValue)_eyes_closed", in: root),
+            armRight: loadImage("\(role.rawValue)_arm_r", in: root),
+            frames: frames
+        )
+        guard assets.hasAnything else { return assets }
+        let summary = frames
+            .map { "\($0.key)×\($0.value.count)" }
+            .sorted()
+            .joined(separator: " ")
+        let cost = Int(Date().timeIntervalSince(started) * 1000)
+        print("🎭 \(role.rawValue) 素材: \(summary.isEmpty ? "仅静态立绘" : summary) (\(cost)ms)")
+        return assets
     }
 
     /// 取出属于某个角色的帧序列,按动作分组、按序号排序
