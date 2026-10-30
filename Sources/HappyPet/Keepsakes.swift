@@ -64,7 +64,7 @@ final class PhotoPanel: CenteredPanel {
     private init(caption: String) {
         super.init(size: CGSize(width: 440, height: 500))
         let view = PhotoCardView(
-            photos: PetAssets.shared.photos,
+            photos: PetAssets.shared.photos.shuffled(),
             caption: caption,
             onClose: { [weak self] in self?.dismiss() }
         )
@@ -119,17 +119,7 @@ struct PhotoCardView: View {
                 .lineLimit(2)
                 .frame(width: 330)
 
-            if photos.count > 1 {
-                HStack(spacing: 6) {
-                    ForEach(0..<photos.count, id: \.self) { i in
-                        Circle()
-                            .fill(i == index
-                                  ? Color(red: 0.95, green: 0.45, blue: 0.55)
-                                  : Color.black.opacity(0.16))
-                            .frame(width: 6, height: 6)
-                    }
-                }
-            }
+            if photos.count > 1 { indicator }
         }
         .padding(.horizontal, 20)
         .padding(.top, 20)
@@ -189,10 +179,56 @@ struct PhotoCardView: View {
         .padding(10)
     }
 
+    /// 底部:照片少用圆点,多了就换成「3 / 39」计数,两侧都能翻
+    private var indicator: some View {
+        let accent = Color(red: 0.95, green: 0.45, blue: 0.55)
+        return HStack(spacing: 14) {
+            arrow("chevron.left", accent: accent) { back() }
+
+            if photos.count <= 12 {
+                HStack(spacing: 6) {
+                    ForEach(0..<photos.count, id: \.self) { i in
+                        Circle()
+                            .fill(i == index ? accent : Color.black.opacity(0.16))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .frame(minWidth: 72)
+            } else {
+                Text("\(index + 1) / \(photos.count)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color.black.opacity(0.45))
+                    .frame(minWidth: 72)
+            }
+
+            arrow("chevron.right", accent: accent) { advance() }
+        }
+    }
+
+    private func arrow(_ symbol: String, accent: Color,
+                       action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(accent))
+        }
+        .buttonStyle(.plain)
+        .opacity(photos.count > 1 ? 1 : 0)
+    }
+
     private func advance() {
         guard photos.count > 1 else { return }
         withAnimation(.easeInOut(duration: 0.35)) {
             index = (index + 1) % photos.count
+        }
+    }
+
+    private func back() {
+        guard photos.count > 1 else { return }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            index = (index - 1 + photos.count) % photos.count
         }
     }
 }
@@ -214,7 +250,7 @@ final class GiftPanel: CenteredPanel {
     private init() {
         super.init(size: CGSize(width: 400, height: 500))
         let view = GiftFlowView(
-            items: GiftStore.shared.items,
+            items: GiftStore.shared.makeItems(),
             onClose: { [weak self] in self?.dismiss() }
         )
         let host = NSHostingView(rootView: view)

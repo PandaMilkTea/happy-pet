@@ -237,12 +237,19 @@ struct GiftListView: View {
         HStack(spacing: 18) {
             arrow("chevron.left", enabled: index > 0) { step(-1) }
 
-            HStack(spacing: 5) {
-                ForEach(items.indices, id: \.self) { i in
-                    Circle()
-                        .fill(i == index ? accent : ink.opacity(0.16))
-                        .frame(width: 6, height: 6)
+            if items.count <= 14 {
+                HStack(spacing: 5) {
+                    ForEach(items.indices, id: \.self) { i in
+                        Circle()
+                            .fill(i == index ? accent : ink.opacity(0.16))
+                            .frame(width: 6, height: 6)
+                    }
                 }
+            } else {
+                Text("\(index + 1) / \(items.count)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(ink.opacity(0.45))
+                    .frame(minWidth: 70)
             }
 
             arrow("chevron.right", enabled: index < items.count - 1) { step(1) }

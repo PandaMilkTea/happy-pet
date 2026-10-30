@@ -47,15 +47,16 @@ final class GiftStore {
 
     static let shared = GiftStore()
 
-    /// 这次拆开能看到的全部礼物
-    let items: [GiftItem]
+    /// 每次拆开都重新抽一次:照片和情话会换,兑换券保持原样
+    func makeItems() -> [GiftItem] {
+        GiftStore.build(assets: PetAssets.shared)
+    }
 
     private static let usedKey = "HappyPet.usedCoupons"
     private var used: Set<String>
 
     private init() {
         used = Set(UserDefaults.standard.stringArray(forKey: GiftStore.usedKey) ?? [])
-        items = GiftStore.build(assets: PetAssets.shared)
     }
 
     // MARK: 兑换券状态
@@ -66,11 +67,6 @@ final class GiftStore {
         guard item.isCoupon, !used.contains(item.id) else { return }
         used.insert(item.id)
         UserDefaults.standard.set(Array(used), forKey: GiftStore.usedKey)
-    }
-
-    /// 还剩几张没用
-    var remainingCoupons: Int {
-        items.filter { $0.isCoupon && !used.contains($0.id) }.count
     }
 
     // MARK: 组装
@@ -104,8 +100,8 @@ final class GiftStore {
             ))
         }
 
-        // 3. 合照:photos 目录里的全都放进来
-        for (i, photo) in assets.photos.enumerated() {
+        // 3. 合照:随机挑三张混进清单,想看全部走菜单的「看看我们的照片」
+        for (i, photo) in assets.photos.shuffled().prefix(3).enumerated() {
             result.append(GiftItem(
                 id: "photo-\(i)",
                 kind: .photo,
