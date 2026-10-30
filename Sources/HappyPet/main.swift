@@ -28,7 +28,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         wireUpCallbacks()
         setupStatusItem()
+        observeScreenChanges()
         brain.start()
+    }
+
+    /// 外接屏拔掉、分辨率切换、Dock 换位置都会发这个通知。
+    /// 不处理的话宠物会停在一块已经不存在的区域里,看着就是"桌宠不见了"。
+    private func observeScreenChanges() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.brain.clampToVisibleScreen()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

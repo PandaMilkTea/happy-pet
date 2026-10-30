@@ -361,6 +361,48 @@ final class PetBrain: ObservableObject {
         window.setFrameOrigin(NSPoint(x: posX, y: posY))
     }
 
+    // MARK: - 鼠标穿透
+
+    /// 窗口当前是否处于"点击穿透"。初值 false,和 PetPanel 创建时的 ignoresMouseEvents 保持一致
+    private var mousePassthrough = false
+
+    /// 窗口是 200×300 的大矩形,宠物只占下面一小块,上方留给牌子和气泡。
+    /// 视图的 hitTest 返回 nil 只能让事件落到同 App 的下层视图,传不到别的 App 去,
+    /// 所以空白区必须靠 ignoresMouseEvents 真正放行。这里每帧按鼠标位置切换热区,
+    /// 只在状态翻转时写窗口属性,避免每帧 60 次无谓赋值。
+    private func updateMousePassthrough() {
+        guard !isGuest, let window else { return }
+        let shouldPass = !isMouseOnPet(window.frame)
+        guard shouldPass != mousePassthrough else { return }
+        mousePassthrough = shouldPass
+        window.ignoresMouseEvents = shouldPass
+    }
+
+    /// 鼠标是否压在宠物(或它捧着的蛋糕)上
+    private func isMouseOnPet(_ frame: NSRect) -> Bool {
+        // 拖拽时鼠标常会跑到身体外面,这时绝不能放行,否则拖到一半就断手了
+        if state == .drag { return true }
+        let mouse = NSEvent.mouseLocation
+        guard frame.contains(mouse) else { return false }
+        let hasCharacter = roleAssets.hasAnything
+        if PetGeometry.bodyContains(mouse,
+                                    in: frame,
+                                    role: role,
+                                    hasCharacter: hasCharacter,
+                                    padding: 2) {
+            return true
+        }
+        if isHoldingCake,
+           PetGeometry.cakeContains(mouse,
+                                    in: frame,
+                                    role: role,
+                                    hasCharacter: hasCharacter,
+                                    facingRight: facingRight) {
+            return true
+        }
+        return false
+    }
+
     // MARK: - 交互入口
 
     /// 鼠标点击宠物
@@ -574,6 +616,28 @@ final class PetBrain: ObservableObject {
         switchTo(.idle)
     }
 
+    /// 屏幕环境变了(拔掉外接屏、切分辨率、Dock 换边)之后,宠物可能整只留在
+    /// 一块已经不存在的区域里。先看它跟现有屏幕还有没有足够重叠:
+    /// 重叠够就夹回可见范围,整只丢了就直接回右下角。
+    func clampToVisibleScreen() {
+        guard let window else { return }
+        let frame = window.frame
+        let stillVisible = NSScreen.screens.contains { screen in
+            let inter = screen.visibleFrame.intersection(frame)
+            return inter.width >= frame.width * 0.5 && inter.height >= 40
+        }
+        guard stillVisible else {
+            resetPosition()
+            return
+        }
+        guard let visible = currentScreen()?.visibleFrame else { return }
+        posX = min(max(posX, Double(visible.minX)), Double(visible.maxX - windowSize.width))
+        posY = min(max(posY, Double(visible.minY)), Double(visible.maxY - windowSize.height))
+        velX = 0
+        fallVelocity = 0
+        applyPosition()
+    }
+
     // MARK: - 主循环
 
     private func tick() {
@@ -617,6 +681,7 @@ final class PetBrain: ObservableObject {
         updateArm(dt)
         updateFacing(dt)
         updatePose(dt)
+        updateMousePassthrough()
 
         // 帧动画:走路按实际位移推进,其余按时间推进
         sprites.play(spriteAction)
